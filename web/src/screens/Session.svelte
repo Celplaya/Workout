@@ -7,9 +7,10 @@
   import { byIdx } from '../lib/stats';
   import { clock, stopRest } from '../lib/timers.svelte';
   import { keepAwake } from '../lib/wakelock';
-  import type { Session } from '../lib/types';
 
-  let { session }: { session: Session } = $props();
+  let { id }: { id: string } = $props();
+  // Looked up by id so the screen stays valid while it is being closed.
+  const session = $derived(store.sessionById.get(id)!);
 
   $effect(() => {
     keepAwake(true);
@@ -56,8 +57,9 @@
   async function discard() {
     if (!confirm('Deze sessie en alle sets verwijderen?')) return;
     stopRest();
-    await deleteSession(session.id);
+    const sid = session.id;
     go('', true);
+    await deleteSession(sid);
   }
 </script>
 
