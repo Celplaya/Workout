@@ -24,6 +24,8 @@ let again = false;
 let againPull = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let refreshed = false;
+/** Record ids known to exist on the server (lets us pick update vs. create first). */
+const serverIds = new Set<string>();
 
 function isNetworkError(e: unknown): boolean {
   return e instanceof ClientResponseError ? e.status === 0 : true;
@@ -92,16 +94,26 @@ async function send(op: OutboxOp): Promise<void> {
     }
     return;
   }
-  // Ids are generated on the device, so a create may already have succeeded
-  // earlier (e.g. the response got lost). Fall back to an update in that case.
+  // Ids are generated on the device, so this is an upsert: update records the
+  // server already has, create the rest (falling back if our guess was wrong,
+  // e.g. when an earlier create succeeded but its response got lost).
+  const { id: _id, ...rest } = op.data!;
+  if (serverIds.has(op.id)) {
+    try {
+      await col.update(op.id, rest);
+      return;
+    } catch (e) {
+      if (!(e instanceof ClientResponseError && e.status === 404)) throw e;
+    }
+  }
   try {
     await col.create(op.data!);
   } catch (e) {
     const dup = e instanceof ClientResponseError && e.status === 400 && e.response?.data?.id?.code === 'validation_not_unique';
     if (!dup) throw e;
-    const { id: _id, ...rest } = op.data!;
     await col.update(op.id, rest);
   }
+  serverIds.add(op.id);
 }
 
 async function push(): Promise<void> {
@@ -143,6 +155,7 @@ async function pull(): Promise<void> {
     const localById = new Map(local.map((r) => [r.id, r]));
     const merged = new Map<string, object>();
     for (const r of remote[i]) {
+      serverIds.add(r.id);
       for (const f of META_FIELDS) delete (r as Record<string, unknown>)[f];
       if (!keepLocal.has(r.id)) merged.set(r.id, r);
     }
