@@ -39,6 +39,9 @@ export default defineConfig({
     // During development the PocketBase API runs on :8090.
     proxy: { '/api': 'http://127.0.0.1:8090' },
   },
+  preview: {
+    proxy: { '/api': 'http://127.0.0.1:8090' },
+  },
   test: {
     include: ['src/**/*.test.ts'],
   },

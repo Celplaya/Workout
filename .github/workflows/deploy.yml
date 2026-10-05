@@ -1,0 +1,79 @@
+name: Deploy naar NAS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  # Overschrijfbaar via Settings → Secrets and variables → Actions → Variables.
+  APP_DIR: ${{ vars.APP_DIR || '/mnt/Opslag/apps/workout' }}
+  PB_CONTAINER: ${{ vars.PB_CONTAINER || 'workout-pb' }}
+  PB_VERSION: "0.40.4"
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Installeren, testen en bouwen
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run check
+          npm run build
+
+      - name: PocketBase-binary installeren
+        run: sh deploy/install-pocketbase.sh
+
+      - name: Migraties controleren op een lege testdatabase
+        run: |
+          tmp="$(mktemp -d)"
+          "$APP_DIR/bin/pocketbase" migrate up --dir="$tmp" --migrationsDir=pb_migrations
+          rm -rf "$tmp"
+
+      - name: Bestanden naar de NAS kopiëren
+        run: |
+          set -eu
+          mkdir -p "$APP_DIR/pb_data" "$APP_DIR/tailscale/config" "$APP_DIR/tailscale/state"
+          # Atomisch wisselen, zodat PocketBase nooit een half gekopieerde frontend serveert.
+          for pair in "web/dist:pb_public" "pb_migrations:pb_migrations"; do
+            src="${pair%%:*}"; dst="$APP_DIR/${pair##*:}"
+            rm -rf "$dst.new" "$dst.old"
+            cp -R "$src" "$dst.new"
+            [ -d "$dst" ] && mv "$dst" "$dst.old"
+            mv "$dst.new" "$dst"
+            rm -rf "$dst.old"
+          done
+          cp deploy/tailscale-serve.json "$APP_DIR/tailscale/config/serve.json"
+
+      - name: PocketBase herstarten (voert nieuwe migraties uit)
+        run: |
+          if ! docker inspect "$PB_CONTAINER" >/dev/null 2>&1; then
+            echo "::warning::Container $PB_CONTAINER bestaat nog niet. Installeer eerst de app via deploy/docker-compose.yml."
+            exit 0
+          fi
+          docker restart "$PB_CONTAINER"
+          for i in $(seq 1 30); do
+            if docker exec "$PB_CONTAINER" wget -qO- http://127.0.0.1:8090/api/health >/dev/null 2>&1; then
+              echo "PocketBase is gezond."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::PocketBase reageert niet na herstart"
+          docker logs --tail 50 "$PB_CONTAINER"
+          exit 1
