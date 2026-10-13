@@ -1,7 +1,7 @@
 # Workout Program
 
 Persoonlijke trainingslog voor de iPhone, als PWA ("Zet op beginscherm" in Safari).
-Alle data staat in PocketBase op de NAS. Het netwerk is alleen bereikbaar via Tailscale, en er is geen cloud en geen tracking.
+Alle data staat in PocketBase op de NAS, alleen bereikbaar via Tailscale. Er is geen cloud en geen tracking.
 
 - **Vandaag:** de training van vandaag volgens je schema, of "Rustdag" met de volgende training.
 - **Loggen:** grote steppers voor kg en reps, vooraf ingevuld met je vorige waarde. Bij elke oefening zie je "vorige: 3×8 @ 60 kg".
@@ -21,7 +21,7 @@ web/                Frontend: Vite + Svelte 5 + TypeScript (PWA)
   src/screens/      Vandaag, Sessie, Cardio, Overzicht, Voortgang, Oefening, Schema, Dag, Instellingen
   src/components/   Stepper, RestBar, Chart, TabBar, …
 pb_migrations/      PocketBase-schema (JS-migraties)
-deploy/             docker-compose voor TrueNAS, Tailscale serve-config, PocketBase-installer
+deploy/             PocketBase-installer (voor de migratietest in de workflow)
 .github/workflows/  push-to-deploy via de self-hosted runner
 ```
 
@@ -82,72 +82,47 @@ Op `localhost` werkt ook de service worker (`npm run build && npx vite preview`)
 
 ## Deployment naar de NAS
 
-Na een push naar `main` doet de workflow `.github/workflows/deploy.yml` het volgende op je self-hosted runner:
+Zelfde recept als Wortschatz (`:8090`) en journey (`:8091`). Workout draait op **`:8092`**.
+
+Bij een push naar `main` doet de runner op de NAS (`.github/workflows/deploy.yml`) het volgende:
 
 1. installeren, testen, type-checken en de frontend bouwen
-2. het PocketBase-binary (versie `PB_VERSION`) downloaden en de checksum controleren, naar `/mnt/Opslag/apps/workout/bin`
-3. de migraties eerst controleren op een lege testdatabase
-4. `web/dist` naar `pb_public` en `pb_migrations` naar de NAS kopiëren
-5. de container `workout-pb` herstarten. PocketBase voert nieuwe migraties automatisch uit bij het opstarten, daarna volgt een health check.
+2. de migraties testen op een lege database
+3. `web/dist` naar `/deploy` kopiëren (= dataset `workout-public`, in PocketBase `/pb_public`)
+4. `pb_migrations` naar `/migrations` kopiëren (= dataset `workout-migrations`, in PocketBase `/pb_migrations`)
+
+Komt er een nieuwe migratie bij, dan geeft de workflow een waarschuwing. Herstart dan de PocketBase-app in TrueNAS, want PocketBase voert migraties uit bij het opstarten.
 
 ### Eenmalige installatie
 
-**1. Dataset**
+| Onderdeel | Instelling |
+|---|---|
+| Datasets | `Opslag/workout-public` en `Opslag/workout-migrations` |
+| Runner (Custom App `myoung34/github-runner`) | `REPO_URL=https://github.com/Celplaya/Workout`, verse `RUNNER_TOKEN`, `RUNNER_NAME=truenas-workout`, `LABELS=truenas`, `RUNNER_SCOPE=repo`. Storage: `workout-public` → `/deploy`, `workout-migrations` → `/migrations` |
+| PocketBase (Custom App `ghcr.io/muchobien/pocketbase`) | host-poort 8092 → container 8090. Storage: ixVolume → `/pb_data`, `workout-public` → `/pb_public`, `workout-migrations` → `/pb_migrations`. Alle drie vast. |
+| Superuser | `docker exec <container> pocketbase superuser upsert jij@example.com 'wachtwoord' --dir /pb_data` |
+| App-account | admin `:8092/_/` → `users` → *New record* (vink *verified* aan) |
 
-Maak in TrueNAS een dataset aan, bijvoorbeeld `Opslag/apps/workout` (mountpoint `/mnt/Opslag/apps/workout`).
+Volgorde: eerst de runner en een eerste deploy, daarna PocketBase installeren. Dan staan de migraties al klaar en maakt PocketBase bij de eerste start meteen alle collecties aan.
 
-**2. Self-hosted runner**
-
-Voeg de runner toe via GitHub → repo `Celplaya/Workout` → Settings → Actions → Runners → *New self-hosted runner*. De runner moet:
-- de labels `self-hosted` en `linux` hebben (standaard)
-- schrijfrechten hebben op `/mnt/Opslag/apps/workout`, op exact dat pad. Draait de runner in een container, mount de dataset dan op hetzelfde pad.
-- `docker` kunnen gebruiken (lid van de docker-groep, of `/var/run/docker.sock` gemount)
-- `curl`, `sha256sum` en `unzip` (of `python3`) hebben
-
-Wijkt een pad of containernaam af? Zet dan onder Settings → Secrets and variables → Actions → **Variables** `APP_DIR` en/of `PB_CONTAINER`.
-
-**3. Eerste deploy**
-
-Start de workflow handmatig: Actions → *Deploy naar NAS* → *Run workflow*. Die zet het binary, de frontend en `tailscale/config/serve.json` klaar. De herstartstap geeft nu nog een waarschuwing, omdat de container nog niet bestaat.
-
-**4. Tailscale**
-
-Zet in de [Tailscale admin console](https://login.tailscale.com/admin/dns) **MagicDNS** en **HTTPS Certificates** aan. Maak daarna onder Settings → Keys een **auth key** aan.
-
-> Waarom HTTPS? iOS staat een service worker (offline werken) en "scherm aan houden" alleen toe op HTTPS. `tailscale serve` regelt een geldig certificaat voor `workout.<tailnet>.ts.net`. Dat adres is alleen bereikbaar binnen je tailnet, en er gaat geen poort open op de NAS.
-
-**5. App installeren in TrueNAS**
-
-Ga naar Apps → Discover Apps → ⋮ → **Install via YAML**. Plak de inhoud van `deploy/docker-compose.yml` en vervang `TS_AUTHKEY`.
-
-**6. Account aanmaken**
-
-Open `https://workout.<tailnet>.ts.net/_/` en maak een superuser aan. De eerste keer vraagt PocketBase je om een installatielink uit de logs: TrueNAS → Apps → workout → Logs van `workout-pb`. Je kunt de superuser ook via de shell aanmaken:
-`docker exec workout-pb /pb/bin/pocketbase superuser upsert jij@example.com 'sterk-wachtwoord' --dir=/pb/pb_data`.
-
-Ga daarna naar Collections → `users` → *New record* en vul je e-mail en wachtwoord in (vink *verified* aan).
-
-**7. Op de iPhone**
-
-Zorg dat Tailscale aan staat, open `https://workout.<tailnet>.ts.net` in Safari, tik op Deel → **Zet op beginscherm** en log in.
-
-Vanaf nu volstaat: **push naar `main` → binnen een minuut live.** Een nieuwe versie zie je in de app onder Instellingen ("Nieuwe versie beschikbaar"). De app ververst nooit vanzelf midden in een training.
+**HTTPS (aanbevolen):** iOS staat offline werken (service worker) en "scherm aan houden" alleen toe via HTTPS. Via de Tailscale-app op de NAS:
+`tailscale serve --bg --https=10443 http://127.0.0.1:8092`. Daarvoor moeten in de Tailscale admin console *MagicDNS* en *HTTPS Certificates* aan staan. Daarna open je `https://truenas-scale.tail5a4b66.ts.net:10443`. Zonder HTTPS werkt de app ook, maar alleen met verbinding.
 
 ### PocketBase updaten
 
-Verhoog `PB_VERSION` in `.github/workflows/deploy.yml` en push. Lees eerst de [changelog](https://github.com/pocketbase/pocketbase/blob/master/CHANGELOG.md) en maak een backup.
+Update de PocketBase-app in TrueNAS en verhoog `PB_VERSION` in de workflow (die versie wordt alleen gebruikt voor de migratietest). Lees eerst de [changelog](https://github.com/pocketbase/pocketbase/blob/master/CHANGELOG.md) en maak een backup.
 
 ### Schema wijzigen
 
-Voeg een nieuw bestand toe in `pb_migrations/` (bijvoorbeeld `1760000000_iets.js`). Pas het schema niet via de admin-UI aan: PocketBase draait met `--automigrate=false`, dus die wijzigingen komen niet in git terecht.
+Voeg een nieuw bestand toe in `pb_migrations/` (bijvoorbeeld `1761000000_iets.js`). Pas het schema niet via de admin-UI aan, anders loopt de database uit de pas met git.
 
 ## Backups
 
-De data staat in `/mnt/Opslag/apps/workout/pb_data` (SQLite). Gebruik bij voorkeur twee lagen.
+De data staat in het ixVolume dat op `/pb_data` gekoppeld is (SQLite). Gebruik bij voorkeur twee lagen.
 
 **1. PocketBase-backups (consistent, ook tijdens gebruik)**
 
-Ga in `https://workout.<tailnet>.ts.net/_/` naar Settings → **Backups**:
+Ga in `http://truenas-scale.tail5a4b66.ts.net:8092/_/` naar Settings → **Backups**:
 
 - Zet *auto backups* aan, bijvoorbeeld cron `0 3 * * *` met *max keep* 14.
 - De zips komen in `pb_data/backups/`.
@@ -155,7 +130,7 @@ Ga in `https://workout.<tailnet>.ts.net/_/` naar Settings → **Backups**:
 
 **2. ZFS-snapshots en replicatie**
 
-Maak in TrueNAS onder Data Protection → **Periodic Snapshot Tasks** een taak voor dataset `Opslag/apps/workout`, bijvoorbeeld dagelijks met 30 dagen bewaren. Daarmee heb je ook de backup-zips uit stap 1.
+Maak in TrueNAS onder Data Protection → **Periodic Snapshot Tasks** een taak voor de pool of de app-datasets, bijvoorbeeld dagelijks met 30 dagen bewaren. Let op: een ixVolume valt onder `ix-apps`, neem dat dus mee. De backup-zips uit stap 1 staan in `/pb_data/backups`.
 
 Wil je een kopie buiten de NAS? Gebruik dan *Replication Tasks* naar een tweede pool of machine, of een Cloud Sync-taak naar een eigen doel.
 
