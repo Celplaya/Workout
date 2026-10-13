@@ -12,6 +12,7 @@
   import Schedule from './screens/Schedule.svelte';
   import Session from './screens/Session.svelte';
   import Settings from './screens/Settings.svelte';
+  import Skills from './screens/Skills.svelte';
   import Summary from './screens/Summary.svelte';
   import Today from './screens/Today.svelte';
   import { store } from './lib/data.svelte';
@@ -66,6 +67,8 @@
     {#key param}<Summary id={param} />{/key}
   {:else if route.name === 'history'}
     <History />
+  {:else if route.name === 'skills'}
+    <Skills />
   {:else if route.name === 'exercise'}
     {#key param}<Exercise id={param} />{/key}
   {:else if route.name === 'schedule'}

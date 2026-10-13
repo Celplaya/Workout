@@ -1,6 +1,6 @@
-import { kg } from './format';
+import { kg, unitOf } from './format';
 import { parseDate, weekStart } from './dates';
-import type { Session, WorkSet } from './types';
+import type { Measure, Session, WorkSet } from './types';
 
 export type Trend = 'up' | 'same' | 'down';
 export type PRKind = 'weight' | 'reps';
@@ -9,6 +9,19 @@ export const byIdx = (a: WorkSet, b: WorkSet) => a.idx - b.idx || a.at - b.at;
 
 export function volumeOf(sets: WorkSet[]): number {
   return sets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+}
+
+/**
+ * Work done in a set of sets, for trends: kg × reps when weight is used,
+ * otherwise the total reps (or seconds) — so bodyweight work and holds compare too.
+ */
+export function workOf(sets: WorkSet[]): number {
+  return sets.some((s) => s.weight > 0) ? volumeOf(sets) : sets.reduce((n, s) => n + s.reps, 0);
+}
+
+/** Highest single-set value (reps or seconds). */
+export function bestValue(sets: WorkSet[]): number {
+  return sets.reduce((m, s) => Math.max(m, s.reps), 0);
 }
 
 export function trend(now: number, before: number): Trend {
@@ -49,18 +62,23 @@ export function lastPerformance(
   return { session: best, sets: exerciseSets.filter((s) => s.session === id).sort(byIdx) };
 }
 
-/** "3×8 @ 60 kg", "8/8/6 @ 60 kg", "60×8, 62,5×6" or "3×12" (bodyweight). */
-export function describeSets(sets: WorkSet[]): string {
+/**
+ * "3×8 @ 60 kg", "8/8/6 @ 60 kg", "60×8, 62,5×6", "3×12" (bodyweight),
+ * "3×20 s" or "20/15/12 s" (holds).
+ */
+export function describeSets(sets: WorkSet[], measure: Measure = 'reps'): string {
   if (!sets.length) return '';
+  const u = unitOf(measure);
   const weights = new Set(sets.map((s) => s.weight));
   if (weights.size === 1) {
     const w = sets[0].weight;
     const reps = sets.map((s) => s.reps);
     const allSame = reps.every((r) => r === reps[0]);
-    const base = allSame ? `${sets.length}×${reps[0]}` : reps.join('/');
-    return w > 0 ? `${base} @ ${kg(w)} kg` : `${base}${allSame ? '' : ' reps'}`;
+    const base = allSame ? `${sets.length}×${kg(reps[0])}` : reps.map(kg).join('/');
+    const tail = u ? ` ${u}` : w > 0 || allSame ? '' : ' reps';
+    return w > 0 ? `${base}${tail} @ ${kg(w)} kg` : `${base}${tail}`;
   }
-  return sets.map((s) => `${kg(s.weight)}×${s.reps}`).join(', ');
+  return sets.map((s) => `${kg(s.weight)}×${kg(s.reps)}${u ? ' ' + u : ''}`).join(', ');
 }
 
 /**
@@ -126,6 +144,10 @@ export interface WeekPoint {
   week: string;
   best: number;
   volume: number;
+  /** Highest reps/seconds in one set that week. */
+  bestValue: number;
+  /** Total reps/seconds that week. */
+  total: number;
 }
 
 /** Best weight and total volume per week (Monday start) for one exercise. */
@@ -135,9 +157,11 @@ export function weeklySeries(exerciseSets: WorkSet[], sessionsById: Map<string, 
     const sess = sessionsById.get(s.session);
     if (!sess) continue;
     const week = weekStart(parseDate(sess.date));
-    const p = m.get(week) ?? { week, best: 0, volume: 0 };
+    const p = m.get(week) ?? { week, best: 0, volume: 0, bestValue: 0, total: 0 };
     p.best = Math.max(p.best, s.weight);
     p.volume += s.weight * s.reps;
+    p.bestValue = Math.max(p.bestValue, s.reps);
+    p.total += s.reps;
     m.set(week, p);
   }
   return [...m.values()].sort((a, b) => a.week.localeCompare(b.week));

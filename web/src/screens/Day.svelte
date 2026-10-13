@@ -1,6 +1,7 @@
 <script lang="ts">
   import { weekdayName } from '../lib/dates';
   import { createExercise, patch, planFor, remove, save, store } from '../lib/data.svelte';
+  import { stepperUnit } from '../lib/format';
   import { newId } from '../lib/id';
   import { userId } from '../lib/pb';
   import type { DayKind, PlanItem } from '../lib/types';
@@ -39,8 +40,10 @@
       day: id,
       exercise: ex.id,
       position,
-      target_sets: 3,
-      target_reps: 8,
+      target_sets: ex.default_sets || 3,
+      target_reps: ex.default_target || (ex.measure === 'seconds' ? 10 : 8),
+      note: '',
+      rest_seconds: 0,
     });
   }
 
@@ -58,8 +61,16 @@
   }
 
   async function bump(p: PlanItem, field: 'target_sets' | 'target_reps', d: number) {
-    const v = Math.max(1, Math.min(50, p[field] + d));
+    // A target of 0 means "no target" (e.g. handstand attempts).
+    const min = field === 'target_reps' ? 0 : 1;
+    const max = field === 'target_reps' ? 600 : 50;
+    const v = Math.max(min, Math.min(max, p[field] + d));
     if (v !== p[field]) await patch('plan_items', p.id, { [field]: v });
+  }
+
+  async function setNote(p: PlanItem, e: Event) {
+    const note = (e.currentTarget as HTMLInputElement).value.trim();
+    if (note !== (p.note ?? '')) await patch('plan_items', p.id, { note });
   }
 
   async function del(p: PlanItem) {
@@ -86,7 +97,7 @@
           {#each plan as p, i (p.id)}
             <div class="item">
               <div class="spread">
-                <span class="name">{store.exerciseById.get(p.exercise)?.name ?? '—'}</span>
+                <a class="name" href={'#/exercise/' + p.exercise}>{store.exerciseById.get(p.exercise)?.name ?? '—'}</a>
                 <div class="order">
                   <button aria-label="Omhoog" disabled={i === 0} onclick={() => move(i, -1)}>▲</button>
                   <button aria-label="Omlaag" disabled={i === plan.length - 1} onclick={() => move(i, 1)}>▼</button>
@@ -105,9 +116,13 @@
                   <button onclick={() => bump(p, 'target_reps', -1)}>−</button>
                   <span class="num">{p.target_reps}</span>
                   <button onclick={() => bump(p, 'target_reps', 1)}>+</button>
-                  <span class="muted small">reps</span>
+                  <span class="muted small">{stepperUnit(store.exerciseById.get(p.exercise)?.measure)}</span>
                 </div>
               </div>
+              <input class="field note" placeholder="Notitie (bijv. 3 min rust)" value={p.note ?? ''} onchange={(e) => setNote(p, e)} />
+              {#if store.exerciseById.get(p.exercise)?.next}
+                <span class="small muted">Volgende stap: {store.exerciseById.get(store.exerciseById.get(p.exercise)!.next)?.name}</span>
+              {/if}
             </div>
           {/each}
         </div>
@@ -147,6 +162,11 @@
   }
   .name {
     font-weight: 600;
+    text-decoration: none;
+  }
+  .note {
+    padding: 10px 12px;
+    font-size: 15px;
   }
   .order {
     display: flex;

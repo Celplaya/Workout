@@ -1,7 +1,9 @@
 import * as idb from './idb';
-import { newId } from './id';
+import { newId, stableId } from './id';
 import { groupBy } from './stats';
 import { userId } from './pb';
+import { DAYS, EXERCISES, PROGRAM_ID, SKILLS } from './program';
+import { proposals, type Proposal } from './progress';
 import {
   COLLECTIONS,
   type CollectionName,
@@ -12,6 +14,8 @@ import {
   type PlanItem,
   type Session,
   type Settings,
+  type Skill,
+  type Dismissal,
   type WorkSet,
 } from './types';
 
@@ -25,6 +29,8 @@ class Store {
   sessions = $state.raw<Session[]>([]);
   sets = $state.raw<WorkSet[]>([]);
   settings = $state.raw<Settings[]>([]);
+  skills = $state.raw<Skill[]>([]);
+  dismissals = $state.raw<Dismissal[]>([]);
   loaded = $state(false);
 
   exerciseById = $derived(new Map(this.exercises.map((e) => [e.id, e])));
@@ -41,6 +47,20 @@ class Store {
   /** Finished sessions, newest first. */
   finished = $derived(
     this.sessions.filter((s) => s.finished).sort((a, b) => b.started - a.started),
+  );
+
+  dismissed = $derived(new Set(this.dismissals.map((d) => d.key)));
+
+  /** Pending progression proposals (skill reached, next step, higher target). */
+  proposals = $derived<Proposal[]>(
+    proposals({
+      planItems: this.plan_items,
+      exercises: this.exerciseById,
+      skills: this.skills,
+      setsByExercise: this.setsByExercise,
+      sessionsById: this.sessionById,
+      dismissed: this.dismissed,
+    }),
   );
 
   prefs = $derived<{ rest_seconds: number; increment: number }>({
@@ -121,15 +141,7 @@ export function planFor(dayId: string): PlanItem[] {
     .sort((a, b) => a.position - b.position);
 }
 
-export const DEFAULT_SCHEDULE: [string, DayKind][] = [
-  ['Push', 'strength'],
-  ['Pull', 'strength'],
-  ['Legs', 'strength'],
-  ['Cardio · Norwegian 4×4', 'cardio'],
-  ['Upper', 'strength'],
-  ['Lower', 'strength'],
-  ['Rust', 'rest'],
-];
+export const DEFAULT_SCHEDULE: [string, DayKind][] = DAYS.map((d) => [d.name, d.kind]);
 
 /** Create the default week schedule and settings if they do not exist yet. */
 export async function seedDefaults(): Promise<void> {
@@ -140,7 +152,7 @@ export async function seedDefaults(): Promise<void> {
     await save('days', { id: newId(), user, weekday: wd, name, kind });
   }
   if (!store.settings.length) {
-    await save('settings', { id: newId(), user, rest_seconds: 120, increment: 2.5 });
+    await save('settings', { id: newId(), user, rest_seconds: 120, increment: 2.5, program: '' });
   }
 }
 
@@ -183,8 +195,158 @@ export async function deleteSession(id: string): Promise<void> {
   await remove('sessions', id);
 }
 
-export async function createExercise(name: string): Promise<Exercise> {
-  const ex: Exercise = { id: newId(), user: userId(), name: name.trim(), increment: 0, archived: false };
+export async function createExercise(name: string, extra: Partial<Exercise> = {}): Promise<Exercise> {
+  const ex: Exercise = {
+    id: newId(),
+    user: userId(),
+    name: name.trim(),
+    increment: 0,
+    archived: false,
+    measure: 'reps',
+    progress: false,
+    next: '',
+    default_sets: 0,
+    default_target: 0,
+    cue: '',
+    ...extra,
+  };
   await save('exercises', ex);
   return ex;
+}
+
+/** Rest after a set of this plan item. */
+export function restFor(item: PlanItem | undefined): number {
+  return item?.rest_seconds || store.prefs.rest_seconds;
+}
+
+const slug = (name: string) => name.trim().toLowerCase();
+
+/**
+ * Load the calisthenics program once (per PROGRAM_ID): exercises with their
+ * progression ladders, Monday–Sunday plan and the skills list. Existing
+ * exercises are reused by name, so history stays attached. Ids are derived
+ * from the content, so a second device doing the same just upserts.
+ */
+export async function applyProgram(): Promise<void> {
+  const settings = store.settings[0];
+  const user = userId();
+  if (!settings || !user || settings.program === PROGRAM_ID) return;
+
+  // 1. Exercises (first pass: create/update; second pass: link ladders).
+  const byName = new Map(store.exercises.map((e) => [slug(e.name), e]));
+  const resolved = new Map<string, Exercise>();
+  for (const def of EXERCISES) {
+    const cur = byName.get(slug(def.name));
+    const rec: Exercise = {
+      ...(cur ?? {
+        id: stableId(user, 'ex', slug(def.name)),
+        user,
+        name: def.name,
+        increment: 0,
+        archived: false,
+        next: '',
+      }),
+      archived: false,
+      measure: def.measure,
+      progress: !!def.progress,
+      default_sets: def.sets ?? 0,
+      default_target: def.target ?? 0,
+      cue: def.cue ?? '',
+    } as Exercise;
+    resolved.set(slug(def.name), rec);
+  }
+  // Save every ladder's next step before the exercise pointing at it: the server
+  // rejects a relation to a record it doesn't have yet (and the outbox sends in order).
+  const nextOf = new Map(EXERCISES.map((d) => [slug(d.name), d.next ? slug(d.next) : '']));
+  const saved = new Set<string>();
+  const saveExercise = async (key: string): Promise<void> => {
+    if (saved.has(key)) return;
+    saved.add(key);
+    const next = nextOf.get(key) ?? '';
+    if (next && resolved.has(next)) await saveExercise(next);
+    const rec = resolved.get(key)!;
+    rec.next = next ? resolved.get(next)?.id ?? '' : '';
+    await save('exercises', rec);
+  };
+  for (const def of EXERCISES) await saveExercise(slug(def.name));
+  const exId = (name: string) => resolved.get(slug(name))!.id;
+
+  // 2. Week schedule and plan.
+  for (const [i, def] of DAYS.entries()) {
+    const weekday = i + 1;
+    const cur = store.dayByWeekday.get(weekday);
+    const day: Day = cur
+      ? { ...cur, name: def.name, kind: def.kind }
+      : { id: stableId(user, 'day', weekday), user, weekday, name: def.name, kind: def.kind };
+    await save('days', day);
+
+    const items: PlanItem[] = def.items.map(([name, sets, target, note, rest], position) => ({
+      id: stableId(user, PROGRAM_ID, weekday, position),
+      user,
+      day: day.id,
+      exercise: exId(name),
+      position,
+      target_sets: sets,
+      target_reps: target,
+      note: note ?? '',
+      rest_seconds: rest ?? 0,
+    }));
+    const keep = new Set(items.map((p) => p.id));
+    for (const old of store.plan_items.filter((p) => p.day === day.id && !keep.has(p.id))) {
+      await remove('plan_items', old.id);
+    }
+    for (const it of items) await save('plan_items', it);
+  }
+
+  // 3. Skills checklist.
+  const now = Date.now();
+  for (const [position, def] of SKILLS.entries()) {
+    const id = stableId(user, 'skill', slug(def.name));
+    if (store.skills.some((x) => x.id === id)) continue;
+    await save('skills', {
+      id,
+      user,
+      name: def.name,
+      tier: def.tier === 0 ? 1 : def.tier,
+      position,
+      exercise: def.exercise ? exId(def.exercise) : '',
+      goal: def.goal ?? 0,
+      achieved_at: def.tier === 0 ? now : 0,
+      note: def.note ?? '',
+    });
+  }
+
+  await patch('settings', settings.id, { program: PROGRAM_ID });
+}
+
+// ---------- proposals ----------
+
+async function dismissKey(key: string) {
+  const user = userId();
+  await save('dismissals', { id: stableId(user, 'dismiss', key), user, key });
+}
+
+/** "Niet nu": hide this proposal (it comes back after a newer session if still true). */
+export async function dismissProposal(p: Proposal): Promise<void> {
+  await dismissKey(p.key);
+}
+
+export async function acceptProposal(p: Proposal): Promise<void> {
+  if (p.kind === 'skill') {
+    await patch('skills', p.skill.id, { achieved_at: Date.now() });
+  } else if (p.kind === 'swap') {
+    if (p.to.archived) await patch('exercises', p.to.id, { archived: false });
+    await patch('plan_items', p.item.id, {
+      exercise: p.to.id,
+      target_sets: p.sets,
+      target_reps: p.target,
+    });
+  } else {
+    await patch('plan_items', p.item.id, { target_reps: p.to });
+  }
+  await dismissKey(p.key);
+}
+
+export async function setSkillAchieved(skill: Skill, achieved: boolean): Promise<void> {
+  await patch('skills', skill.id, { achieved_at: achieved ? Date.now() : 0 });
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { addDays, isoDate, parseDate, shortDate, weekStart, WEEKDAYS_SHORT } from '../lib/dates';
   import { store } from '../lib/data.svelte';
-  import { kg, volume } from '../lib/format';
+  import { amount, kg, volume } from '../lib/format';
   import { trend, volumeOf } from '../lib/stats';
   import type { Session } from '../lib/types';
 
@@ -40,7 +40,12 @@
     store.exercises
       .map((e) => {
         const sets = store.setsByExercise.get(e.id) ?? [];
-        return { e, count: sets.length, best: sets.length ? Math.max(...sets.map((s) => s.weight)) : 0 };
+        return {
+          e,
+          count: sets.length,
+          best: sets.length ? Math.max(...sets.map((s) => s.weight)) : 0,
+          bestValue: sets.length ? Math.max(...sets.map((s) => s.reps)) : 0,
+        };
       })
       .filter((x) => x.count > 0 || !x.e.archived)
       .sort((a, b) => a.e.name.localeCompare(b.e.name, 'nl')),
@@ -91,7 +96,7 @@
             <div class="small muted">{shortDate(parseDate(s.date))}</div>
           </div>
           <span class="num muted small">
-            {#if s.kind === 'cardio'}{s.cardio_done ? '✓ 4×4' : '—'}{s.avg_hr ? ` · ${s.avg_hr} bpm` : ''}{:else}{volume(sessionVolume(s))} kg{/if}
+            {#if s.kind === 'cardio'}{s.cardio_done ? '✓ 4×4' : '—'}{s.avg_hr ? ` · ${s.avg_hr} bpm` : ''}{:else if sessionVolume(s) > 0}{volume(sessionVolume(s))} kg{:else}{(store.setsBySession.get(s.id) ?? []).length} sets{/if}
           </span>
         </a>
       {/each}
@@ -106,7 +111,7 @@
       {#each exercises as x (x.e.id)}
         <a class="row" href={'#/exercise/' + x.e.id}>
           <span>{x.e.name}</span>
-          <span class="num muted small">{x.best ? `${kg(x.best)} kg ›` : '›'}</span>
+          <span class="num muted small">{x.best ? `${kg(x.best)} kg ›` : x.bestValue ? `${amount(x.bestValue, x.e.measure)} ›` : '›'}</span>
         </a>
       {/each}
     </div>

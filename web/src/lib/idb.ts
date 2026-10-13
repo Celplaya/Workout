@@ -7,11 +7,12 @@ import { COLLECTIONS, type CollectionName, type OutboxOp } from './types';
 let dbp: Promise<IDBPDatabase> | null = null;
 
 function db(): Promise<IDBPDatabase> {
-  dbp ??= openDB('workout', 1, {
+  dbp ??= openDB('workout', 2, {
     upgrade(d) {
-      for (const c of COLLECTIONS) d.createObjectStore(c, { keyPath: 'id' });
-      d.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true });
-      d.createObjectStore('meta');
+      // Create whatever is missing, so new collections get a store on upgrade.
+      for (const c of COLLECTIONS) if (!d.objectStoreNames.contains(c)) d.createObjectStore(c, { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('outbox')) d.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true });
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
     },
   });
   return dbp;

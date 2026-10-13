@@ -22,11 +22,13 @@
       exercise: p.exercise,
       targetSets: p.target_sets,
       targetReps: p.target_reps,
+      note: p.note ?? '',
+      restSeconds: p.rest_seconds ?? 0,
     }));
     // Exercises logged in this session that are no longer in the plan stay visible.
     const extra = [...new Set((store.setsBySession.get(session.id) ?? []).sort(byIdx).map((s) => s.exercise))]
       .filter((id) => !plan.some((p) => p.exercise === id))
-      .map((exercise) => ({ exercise, targetSets: 0, targetReps: 0 }));
+      .map((exercise) => ({ exercise, targetSets: 0, targetReps: 0, note: '', restSeconds: 0 }));
     return [...plan, ...extra];
   });
 
@@ -85,6 +87,8 @@
       exercise={it.exercise}
       targetSets={it.targetSets}
       targetReps={it.targetReps}
+      note={it.note}
+      restSeconds={it.restSeconds}
       open={open === it.exercise}
       onopen={() => (open = open === it.exercise ? '' : it.exercise)}
       oncomplete={() => advance(i)}

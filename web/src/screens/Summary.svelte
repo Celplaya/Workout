@@ -1,9 +1,10 @@
 <script lang="ts">
+  import Proposals from '../components/Proposals.svelte';
   import { parseDate, longDate } from '../lib/dates';
   import { deleteSession, store } from '../lib/data.svelte';
-  import { duration, kg, volume } from '../lib/format';
+  import { amount, clock as fmtClock, duration, kg, volume } from '../lib/format';
   import { go } from '../lib/router.svelte';
-  import { byIdx, lastPerformance, prMap, trend, volumeOf, type Trend } from '../lib/stats';
+  import { byIdx, lastPerformance, prMap, trend, volumeOf, workOf, type Trend } from '../lib/stats';
 
   let { id }: { id: string } = $props();
 
@@ -20,12 +21,15 @@
       const prev = lastPerformance(all, store.sessionById, s);
       const vol = volumeOf(mine);
       const prs = prMap(all);
+      const measure = store.exerciseById.get(exId)?.measure || 'reps';
       return {
         id: exId,
         name: store.exerciseById.get(exId)?.name ?? '—',
+        measure,
+        timed: measure !== 'reps',
         sets: mine.map((x) => ({ ...x, pr: prs.get(x.id) })),
         vol,
-        trend: prev ? trend(vol, volumeOf(prev.sets)) : null,
+        trend: prev ? trend(workOf(mine), workOf(prev.sets)) : null,
       };
     });
   });
@@ -36,6 +40,15 @@
   );
   const prevTotal = $derived(prevSession ? volumeOf(store.setsBySession.get(prevSession.id) ?? []) : null);
   const totalTrend = $derived(prevTotal !== null && s?.kind === 'strength' ? trend(total, prevTotal) : null);
+  // Bodyweight work: total reps and hold time instead of kg volume.
+  const repTotal = $derived(
+    exercises.filter((e) => !e.timed).reduce((n, e) => n + e.sets.reduce((m, x) => m + x.reps, 0), 0),
+  );
+  const holdTotal = $derived(
+    exercises
+      .filter((e) => e.measure === 'seconds')
+      .reduce((n, e) => n + e.sets.reduce((m, x) => m + x.reps, 0), 0),
+  );
   const prCount = $derived(exercises.reduce((n, e) => n + e.sets.filter((x) => x.pr).length, 0));
 
   const arrow: Record<Trend, string> = { up: '▲', same: '=', down: '▼' };
@@ -73,13 +86,27 @@
           </div>
         {/if}
       {:else}
-        <div class="stat">
-          <span class="eyebrow">Volume</span>
-          <span class="big num">{volume(total)} <span class="muted small">kg</span></span>
-          {#if totalTrend && prevTotal !== null}
-            <span class="small {totalTrend}">{arrow[totalTrend]} {totalTrend === 'same' ? 'gelijk' : `${volume(Math.abs(total - prevTotal))} kg`} t.o.v. vorige keer</span>
-          {/if}
-        </div>
+        {#if total > 0}
+          <div class="stat">
+            <span class="eyebrow">Volume</span>
+            <span class="big num">{volume(total)} <span class="muted small">kg</span></span>
+            {#if totalTrend && prevTotal !== null}
+              <span class="small {totalTrend}">{arrow[totalTrend]} {totalTrend === 'same' ? 'gelijk' : `${volume(Math.abs(total - prevTotal))} kg`} t.o.v. vorige keer</span>
+            {/if}
+          </div>
+        {/if}
+        {#if repTotal}
+          <div class="stat">
+            <span class="eyebrow">Reps</span>
+            <span class="big num">{repTotal}</span>
+          </div>
+        {/if}
+        {#if holdTotal}
+          <div class="stat">
+            <span class="eyebrow">Hold-tijd</span>
+            <span class="big num">{fmtClock(holdTotal)}</span>
+          </div>
+        {/if}
         <div class="stat">
           <span class="eyebrow">Sets</span>
           <span class="big num">{sets.length}</span>
@@ -95,6 +122,8 @@
 
     {#if s.note}<div class="card">{s.note}</div>{/if}
 
+    <Proposals />
+
     {#each exercises as e (e.id)}
       <div class="card stack">
         <div class="spread">
@@ -105,12 +134,16 @@
           {#each e.sets as x, i (x.id)}
             <span class="set num" class:pr={x.pr}>
               <span class="muted">{i + 1}</span>
-              {kg(x.weight)}<span class="muted">×</span>{x.reps}
+              {#if e.timed}
+                {amount(x.reps, e.measure)}
+              {:else}
+                {kg(x.weight)}<span class="muted">×</span>{x.reps}
+              {/if}
               {#if x.pr}<span class="up">★</span>{/if}
             </span>
           {/each}
         </div>
-        <span class="small muted num">Volume {volume(e.vol)} kg</span>
+        {#if e.vol > 0}<span class="small muted num">Volume {volume(e.vol)} kg</span>{/if}
       </div>
     {/each}
 

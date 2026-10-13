@@ -1,7 +1,7 @@
 import { ClientResponseError } from 'pocketbase';
 import * as idb from './idb';
 import { pb } from './pb';
-import { loadLocal, seedDefaults, setChangeListener, setCollection, store, touchedSince } from './data.svelte';
+import { applyProgram, loadLocal, seedDefaults, setChangeListener, setCollection, store, touchedSince } from './data.svelte';
 import { COLLECTIONS, type CollectionName, type OutboxOp } from './types';
 
 // Local-first sync: push the outbox (in order), then pull everything and overlay
@@ -169,6 +169,8 @@ async function pull(): Promise<void> {
   });
   lastPull = Date.now();
   if (!store.days.length || !store.settings.length) await seedDefaults();
+  // Only after a successful pull, so the program is merged with what the server has.
+  await applyProgram();
 }
 
 export async function initSync(): Promise<void> {

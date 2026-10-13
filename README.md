@@ -8,6 +8,9 @@ Alle data staat in PocketBase op de NAS. Het netwerk is alleen bereikbaar via Ta
 - **Extra's:** een rusttimer die na elke set automatisch start, PR-meldingen, een overload-hint (+2,5 kg) en een Norwegian 4×4-timer.
 - **Overzicht:** na afloop zie je volume, duur, PR's en ▲ = ▼ ten opzichte van de vorige keer.
 - **Voortgang:** een weekoverzicht en per oefening grafieken van je zwaarste gewicht en volume per week.
+- **Calisthenics:** oefeningen meet je in reps, seconden (holds, met ingebouwde hold-timer) of minuten. Per oefening in je schema staan een notitie en eventueel een eigen rusttijd.
+- **Skills:** een checklist per laag (snel af te vinken, hoofdfocus, lange termijn, later). Een skill gekoppeld aan een oefening vinkt de app voor je aan zodra je het doel haalt.
+- **Automatische progressie:** haal je een doel **2 sessies op rij**, dan stelt de app de volgende stap voor (bijvoorbeeld tuck L-sit → one-leg L-sit) of een hoger doel (+1 rep, +2/+5 s). Jij bevestigt met één tik of kiest "Niet nu".
 - **Offline:** alles wordt eerst lokaal opgeslagen (IndexedDB) en gesynchroniseerd zodra de server bereikbaar is. Een per ongeluk gesloten sessie gaat verder waar je was.
 
 ## Opbouw
@@ -35,9 +38,13 @@ Elke collectie heeft een `user`-relatie, en de API-regels laten alleen de eigena
 | `plan_items` | oefening per dag met volgorde en doel sets × reps |
 | `sessions` | een training: datum, start/einde (epoch ms), cardio gedaan, gem. hartslag, notitie |
 | `sets` | gewicht en reps per set |
-| `settings` | rusttijd en standaard stapgrootte |
+| `settings` | rusttijd, standaard stapgrootte en het geladen programma |
+| `skills` | skill, laag, gekoppelde oefening, doel per set, datum gehaald |
+| `dismissals` | voorstellen die je hebt geaccepteerd of weggeklikt |
 
-Bij de eerste login maakt de app je standaardschema aan: ma Push · di Pull · wo Legs · do Cardio (4×4) · vr Upper · za Lower · zo Rust. Je past dit aan onder **Schema**.
+Oefeningen hebben daarnaast `measure` (reps/seconds/minutes), `next` (volgende stap in de ladder), `default_sets`/`default_target` (startdoel van die stap), `progress` (doel automatisch verhogen) en `cue` (tip tijdens het loggen). Bij holds staat de tijd in het veld `reps` van een set.
+
+Het calisthenics-programma (`web/src/lib/program.ts`) wordt één keer per account geladen: ma Push + planche · di Pull + pull-ups · wo Benen 1 + pistol · do Mobility + zone 2 · vr Upper + handstand · za Benen 2 · zo Rust, met alle progressieladders en de skilllijst. Bestaande oefeningen worden op naam hergebruikt, dus je geschiedenis blijft. Seed-records krijgen een vaste id, zodat een tweede toestel geen dubbele records maakt. Wil je een nieuw programma laden, verhoog dan `PROGRAM_ID`. Daarna pas je alles aan onder **Schema**, **Skills** en per oefening.
 
 ### Sync
 

@@ -1,8 +1,10 @@
 <script lang="ts">
+  import Proposals from '../components/Proposals.svelte';
   import SyncDot from '../components/SyncDot.svelte';
   import { addDays, isoDate, longDate, weekdayName, weekdayOf } from '../lib/dates';
   import { planFor, startSession, store } from '../lib/data.svelte';
   import { go } from '../lib/router.svelte';
+  import { target } from '../lib/format';
   import { describeSets, lastPerformance } from '../lib/stats';
   import { clock } from '../lib/timers.svelte';
   import type { Day } from '../lib/types';
@@ -36,7 +38,7 @@
 
   function prevText(exId: string) {
     const p = lastPerformance(store.setsByExercise.get(exId) ?? [], store.sessionById);
-    return p ? describeSets(p.sets) : '';
+    return p ? describeSets(p.sets, store.exerciseById.get(exId)?.measure || 'reps') : '';
   }
 
   const when = (n: number) => (n === 1 ? 'Morgen' : weekdayName(weekdayOf(addDays(now, n))));
@@ -56,6 +58,8 @@
     </button>
   {/if}
 
+  {#if !store.active}<Proposals />{/if}
+
   {#if !day}
     <p class="empty">Schema laden…</p>
   {:else if day.kind === 'rest'}
@@ -66,7 +70,7 @@
         <span class="eyebrow">{when(next.inDays)}</span>
         <h2>{next.day.name}</h2>
         {#each planFor(next.day.id) as p (p.id)}
-          <div class="spread small"><span>{store.exerciseById.get(p.exercise)?.name}</span><span class="muted num">{p.target_sets}×{p.target_reps}</span></div>
+          <div class="spread small"><span>{store.exerciseById.get(p.exercise)?.name}</span><span class="muted num">{target(p.target_sets, p.target_reps, store.exerciseById.get(p.exercise)?.measure)}</span></div>
         {/each}
       </div>
     {/if}
@@ -96,7 +100,7 @@
                 <div>{store.exerciseById.get(p.exercise)?.name ?? '—'}</div>
                 {#if prev}<div class="small muted">vorige: {prev}</div>{/if}
               </div>
-              <span class="num muted">{p.target_sets}×{p.target_reps}</span>
+              <span class="num muted">{target(p.target_sets, p.target_reps, store.exerciseById.get(p.exercise)?.measure)}</span>
             </div>
           {/each}
         </div>

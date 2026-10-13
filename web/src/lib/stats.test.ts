@@ -23,6 +23,13 @@ describe('describeSets', () => {
   it('formats bodyweight', () => {
     expect(describeSets([set('a', 0, 12), set('a', 0, 12)])).toBe('2×12');
   });
+  it('formats holds in seconds', () => {
+    expect(describeSets([set('a', 0, 20), set('a', 0, 20)], 'seconds')).toBe('2×20 s');
+    expect(describeSets([set('a', 0, 20), set('a', 0, 15)], 'seconds')).toBe('20/15 s');
+  });
+  it('formats minutes', () => {
+    expect(describeSets([set('a', 0, 30)], 'minutes')).toBe('1×30 min');
+  });
 });
 
 describe('overloadSuggestion', () => {
@@ -98,8 +105,8 @@ describe('aggregates', () => {
     const map = new Map([s1, s2, s3].map((s) => [s.id, s]));
     const pts = weeklySeries([set('s1', 60, 8), set('s2', 65, 5), set('s3', 70, 3)], map);
     expect(pts).toEqual([
-      { week: '2026-10-05', best: 65, volume: 805 },
-      { week: '2026-10-12', best: 70, volume: 210 },
+      { week: '2026-10-05', best: 65, volume: 805, bestValue: 8, total: 13 },
+      { week: '2026-10-12', best: 70, volume: 210, bestValue: 3, total: 3 },
     ]);
   });
 });
