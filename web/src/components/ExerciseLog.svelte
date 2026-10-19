@@ -5,7 +5,7 @@
   import { byIdx, describeSets, lastPerformance, overloadSuggestion, prKind, prefill } from '../lib/stats';
   import { showToast } from '../lib/toast.svelte';
   import { clock, startRest, stopRest } from '../lib/timers.svelte';
-  import { beep, unlockAudio } from '../lib/sound';
+  import { beep, primeSpeech, say, tick, unlockAudio } from '../lib/sound';
   import type { Session } from '../lib/types';
 
   let {
@@ -59,26 +59,52 @@
     reps = p.reps;
   });
 
-  // ---- hold timer: counts up, beeps at the target, tap again to take the time ----
+  // ---- hold timer ----
+  // Normal: tap to start, tap to stop.
+  // Hands-free (handstand): 5 s countdown to get into position, then a tick every
+  // second and the count spoken every 5 s, a double beep at the target. Tap to stop
+  // after you come down; correct a second or two with the stepper if needed.
+  const COUNTDOWN = 5;
   let holdStart = $state(0);
+  let handsFree = $state(false);
   let beeped = false;
-  const held = $derived(holdStart ? Math.floor((clock.now - holdStart) / 1000) : 0);
+  let lastSecond = 0;
+  const elapsed = $derived(holdStart ? (clock.now - holdStart) / 1000 : 0);
+  const counting = $derived(holdStart > 0 && elapsed < 0);
+  const held = $derived(holdStart ? Math.max(0, Math.floor(elapsed)) : 0);
+  const countdownLeft = $derived(counting ? Math.ceil(-elapsed) : 0);
+
   $effect(() => {
-    if (holdStart && !beeped && targetReps > 0 && held >= targetReps) {
+    if (!holdStart) return;
+    const sec = Math.floor(elapsed);
+    if (sec === lastSecond) return;
+    lastSecond = sec;
+    if (sec < 0) {
+      beep(1, 660);
+    } else if (sec === 0) {
+      if (handsFree) beep(1, 1320);
+    } else if (targetReps > 0 && !beeped && sec >= targetReps) {
       beeped = true;
-      beep(1);
+      beep(2, 1320);
+    } else if (handsFree) {
+      if (sec % 5 === 0) say(String(sec));
+      else tick();
     }
   });
-  function toggleHold() {
+
+  function startHold(free: boolean) {
     unlockAudio();
-    if (holdStart) {
-      reps = held;
-      holdStart = 0;
-    } else {
-      stopRest();
-      beeped = false;
-      holdStart = Date.now();
-    }
+    if (free) primeSpeech();
+    stopRest();
+    beeped = false;
+    handsFree = free;
+    lastSecond = free ? -COUNTDOWN - 1 : 0;
+    holdStart = Date.now() + (free ? COUNTDOWN * 1000 : 0);
+  }
+
+  function stopHold() {
+    if (!counting) reps = held;
+    holdStart = 0;
   }
 
   let busy = false;
@@ -86,10 +112,7 @@
     if (busy) return;
     busy = true;
     unlockAudio();
-    if (holdStart) {
-      reps = held;
-      holdStart = 0;
-    }
+    if (holdStart) stopHold();
     const earlier = store.setsByExercise.get(exercise) ?? [];
     const pr = prKind({ weight, reps, session: session.id }, earlier);
     const willComplete = targetSets > 0 && done.length + 1 === targetSets;
@@ -147,13 +170,20 @@
       {/if}
 
       {#if isHold}
-        <button class="btn big hold" class:running={!!holdStart} onclick={toggleHold}>
-          {#if holdStart}
-            <span class="num">{held} s</span><span class="small">tik om te stoppen</span>
-          {:else}
-            ⏱ Start hold-timer
-          {/if}
-        </button>
+        {#if holdStart}
+          <button class="btn big hold running" class:counting onclick={stopHold}>
+            {#if counting}
+              <span class="num">{countdownLeft}</span><span class="small">in positie… tik om te annuleren</span>
+            {:else}
+              <span class="num">{held} s</span><span class="small">tik om te stoppen</span>
+            {/if}
+          </button>
+        {:else}
+          <div class="hold-start">
+            <button class="btn" onclick={() => startHold(false)}>⏱ Timer</button>
+            <button class="btn" onclick={() => startHold(true)}>🙌 Handsfree</button>
+          </div>
+        {/if}
       {/if}
       {#if !timed}<Stepper bind:value={weight} step={step} unit="kg" />{/if}
       <Stepper bind:value={reps} step={1} unit={stepperUnit(measure)} integer />
@@ -216,6 +246,15 @@
   .hold {
     flex-direction: column;
     gap: 0;
+  }
+  .hold-start {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .hold.running.counting {
+    color: var(--text);
+    background: var(--surface-2);
   }
   .hold.running {
     background: color-mix(in srgb, var(--accent) 18%, transparent);
