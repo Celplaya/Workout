@@ -124,3 +124,28 @@ export function proposals(input: ProgressInput): Proposal[] {
 export function skillBest(skill: Skill, setsByExercise: Map<string, WorkSet[]>): number {
   return skill.exercise ? bestValue(setsByExercise.get(skill.exercise) ?? []) : 0;
 }
+
+/**
+ * When a new program replaces the plan, keep the progress already made:
+ * - if the old plan already moved further along this exercise's ladder
+ *   (e.g. tuck L-sit → one-leg L-sit), keep that later step with its targets;
+ * - otherwise keep a per-set target that was raised above the program's value.
+ */
+export function carryOver(
+  exerciseId: string,
+  sets: number,
+  target: number,
+  oldItems: PlanItem[],
+  exercises: Map<string, Exercise>,
+): { exercise: string; sets: number; target: number } {
+  const chain: string[] = [];
+  for (let id = exerciseId; id && !chain.includes(id); id = exercises.get(id)?.next ?? '') chain.push(id);
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const old = oldItems.filter((p) => p.exercise === chain[i]);
+    if (!old.length) continue;
+    const best = old.reduce((a, b) => (b.target_reps > a.target_reps ? b : a));
+    if (i > 0) return { exercise: chain[i], sets: best.target_sets, target: best.target_reps };
+    return { exercise: exerciseId, sets, target: target > 0 ? Math.max(target, best.target_reps) : target };
+  }
+  return { exercise: exerciseId, sets, target };
+}

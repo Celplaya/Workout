@@ -3,7 +3,7 @@ import { newId, stableId } from './id';
 import { groupBy } from './stats';
 import { userId } from './pb';
 import { DAYS, EXERCISES, PROGRAM_ID, SKILLS } from './program';
-import { proposals, type Proposal } from './progress';
+import { carryOver, proposals, type Proposal } from './progress';
 import {
   COLLECTIONS,
   type CollectionName,
@@ -271,7 +271,10 @@ export async function applyProgram(): Promise<void> {
   for (const def of EXERCISES) await saveExercise(slug(def.name));
   const exId = (name: string) => resolved.get(slug(name))!.id;
 
-  // 2. Week schedule and plan.
+  // 2. Week schedule and plan. Progress from the old plan is carried over.
+  const oldItems = [...store.plan_items];
+  const exMap = new Map(store.exercises.map((e) => [e.id, e]));
+  for (const e of resolved.values()) exMap.set(e.id, e);
   for (const [i, def] of DAYS.entries()) {
     const weekday = i + 1;
     const cur = store.dayByWeekday.get(weekday);
@@ -280,17 +283,20 @@ export async function applyProgram(): Promise<void> {
       : { id: stableId(user, 'day', weekday), user, weekday, name: def.name, kind: def.kind };
     await save('days', day);
 
-    const items: PlanItem[] = def.items.map(([name, sets, target, note, rest], position) => ({
-      id: stableId(user, PROGRAM_ID, weekday, position),
-      user,
-      day: day.id,
-      exercise: exId(name),
-      position,
-      target_sets: sets,
-      target_reps: target,
-      note: note ?? '',
-      rest_seconds: rest ?? 0,
-    }));
+    const items: PlanItem[] = def.items.map(([name, sets, target, note, rest], position) => {
+      const c = carryOver(exId(name), sets, target, oldItems, exMap);
+      return {
+        id: stableId(user, PROGRAM_ID, weekday, position),
+        user,
+        day: day.id,
+        exercise: c.exercise,
+        position,
+        target_sets: c.sets,
+        target_reps: c.target,
+        note: c.exercise === exId(name) ? (note ?? '') : '',
+        rest_seconds: rest ?? 0,
+      };
+    });
     const keep = new Set(items.map((p) => p.id));
     for (const old of store.plan_items.filter((p) => p.day === day.id && !keep.has(p.id))) {
       await remove('plan_items', old.id);

@@ -171,3 +171,30 @@ describe('stableId', () => {
     expect(a).toMatch(/^[a-z0-9]{15}$/);
   });
 });
+
+import { carryOver } from './progress';
+
+describe('carryOver', () => {
+  const exs = new Map(
+    [
+      ex('tuck', { next: 'one' }),
+      ex('one', { next: 'full' }),
+      ex('full'),
+      ex('pull', { measure: 'reps' }),
+      ex('hs'),
+    ].map((e) => [e.id, e]),
+  );
+  it('keeps a later ladder step from the old plan', () => {
+    expect(carryOver('tuck', 4, 10, [item('one', 3, 8)], exs)).toEqual({ exercise: 'one', sets: 3, target: 8 });
+  });
+  it('keeps a raised target', () => {
+    expect(carryOver('pull', 5, 6, [item('pull', 5, 7)], exs)).toEqual({ exercise: 'pull', sets: 5, target: 7 });
+  });
+  it('uses the program when nothing was progressed', () => {
+    expect(carryOver('pull', 5, 6, [item('pull', 5, 5)], exs)).toEqual({ exercise: 'pull', sets: 5, target: 6 });
+    expect(carryOver('pull', 5, 6, [], exs)).toEqual({ exercise: 'pull', sets: 5, target: 6 });
+  });
+  it('keeps "no target" items as attempts', () => {
+    expect(carryOver('hs', 6, 0, [item('hs', 8, 0)], exs)).toEqual({ exercise: 'hs', sets: 6, target: 0 });
+  });
+});

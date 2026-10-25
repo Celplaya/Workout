@@ -1,10 +1,14 @@
 import type { DayKind, Measure } from './types';
 
-// The calisthenics program (October 2026). Loaded once per account by
-// applyProgram(); afterwards everything stays editable in the app.
-// Exercises are matched by name, so existing history is kept.
+// The calisthenics program. Loaded once per PROGRAM_ID by applyProgram();
+// afterwards everything stays editable in the app. Exercises are matched by
+// name, so history is kept, and progress already made in the old plan (a
+// raised target or a later ladder step) is carried over.
+//
+// v2 (25 okt 2026): upper/lower — ma Upper A · di Lower A · wo Mobility ·
+// do Upper B · vr Lower B · za/zo rust. Sessies ± 60–75 min.
 
-export const PROGRAM_ID = 'calisthenics-2026-10';
+export const PROGRAM_ID = 'calisthenics-2026-10-ul';
 
 export interface ExerciseDef {
   name: string;
@@ -112,51 +116,35 @@ export interface DayDef {
 }
 
 const handstand: Item[] = [
-  ['Chest-to-wall handstand', 3, 30],
-  ['Vrije handstand', 8, 0, 'Beste poging telt'],
+  ['Chest-to-wall handstand', 3, 30, '± 8 min handstand, inclusief vrije pogingen'],
+  ['Vrije handstand', 6, 0, 'Beste poging telt · Handsfree-timer'],
 ];
-const handstandShort: Item[] = [['Vrije handstand', 6, 0, '5 min, alleen vrije pogingen']];
+const handstandShort: Item[] = [['Vrije handstand', 6, 0, '5 min, polsen nog fris']];
 
 /** Monday … Sunday */
 export const DAYS: DayDef[] = [
   {
-    name: 'Push + planche',
+    name: 'Upper A · planche',
     kind: 'strength',
     items: [
       ...handstand,
-      ['Elbow lever', 4, 10],
       ['Planche lean', 3, 20],
-      ['Tuck planche', 6, 5],
-      ['Weighted dips', 4, 7],
-      ['Archer push-ups', 3, 6],
-      ['Pike push-ups voeten verhoogd', 3, 8],
-      ['Bodyweight skull crusher', 3, 10],
-      ['Incline bench press', 3, 8],
-      ['DB shoulder press', 3, 8],
-      ['Tuck L-sit', 4, 10],
-    ],
-  },
-  {
-    name: 'Pull + pull-ups',
-    kind: 'strength',
-    items: [
-      ...handstand,
-      ['Scapular pull-ups', 2, 8, 'Warm-up'],
+      ['Tuck planche', 4, 5],
       ['Pull-ups', 5, 6, '3 min rust · stop 1 rep voor failure', 180],
       ['Pull-up negatives', 3, 1],
+      ['Weighted dips', 4, 7],
       ['Advanced tuck front lever', 5, 8],
-      ['Bodyweight rows', 4, 10],
-      ['Bodyweight curls', 3, 8],
-      ['Pulldown', 3, 10],
+      ['Archer push-ups', 3, 6],
+      ['Bodyweight rows', 3, 10],
       ['Muscle-up step 1 (false grip)', 3, 3],
-      ['Hollow body hang', 2, 30],
     ],
   },
   {
-    name: 'Benen 1 + pistol',
+    name: 'Lower A · pistol',
     kind: 'strength',
     items: [
       ...handstandShort,
+      ['Elbow lever', 4, 10, 'Ellebogen tegen je heupen, langzaam naar voren leunen'],
       ['Pistol links negatives', 4, 4],
       ['Pistol rechts', 3, 5],
       ['Bulgarian split squat', 3, 8],
@@ -188,27 +176,27 @@ export const DAYS: DayDef[] = [
     ],
   },
   {
-    name: 'Upper + handstand',
+    name: 'Upper B · handstand',
     kind: 'strength',
     items: [
       ...handstand,
-      ['Explosive pull-ups', 4, 3],
-      ['Hammer grip pull-ups', 4, 6],
-      ['Elbow lever', 3, 10],
       ['Pike to planche lean', 3, 5],
+      ['Explosive pull-ups', 4, 3],
+      ['Hammer grip pull-ups', 4, 6, 'Niet tot failure'],
+      ['Pike push-ups voeten verhoogd', 3, 8],
       ['Archer push-ups', 3, 6],
+      ['Bodyweight curls', 3, 8],
       ['Bodyweight skull crusher', 3, 10, '1–2 reps in de tank'],
-      ['Rows', 4, 8],
-      ['Shoulder press', 3, 8],
+      ['Rows', 3, 8],
       ['Tuck L-sit', 3, 10],
-      ['Compact leg lifts', 3, 10],
     ],
   },
   {
-    name: 'Benen 2',
+    name: 'Lower B · nordic',
     kind: 'strength',
     items: [
       ...handstandShort,
+      ['Elbow lever', 3, 10],
       ['Reverse nordic partials', 3, 8],
       ['Archer squats', 4, 6],
       ['Sissy squats', 3, 8],
@@ -218,6 +206,7 @@ export const DAYS: DayDef[] = [
       ['Side plank', 2, 45],
     ],
   },
+  { name: 'Rust', kind: 'rest', items: [] },
   { name: 'Rust', kind: 'rest', items: [] },
 ];
 

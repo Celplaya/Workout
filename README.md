@@ -44,7 +44,7 @@ Elke collectie heeft een `user`-relatie, en de API-regels laten alleen de eigena
 
 Oefeningen hebben daarnaast `measure` (reps/seconds/minutes), `next` (volgende stap in de ladder), `default_sets`/`default_target` (startdoel van die stap), `progress` (doel automatisch verhogen) en `cue` (tip tijdens het loggen). Bij holds staat de tijd in het veld `reps` van een set.
 
-Het calisthenics-programma (`web/src/lib/program.ts`) wordt één keer per account geladen: ma Push + planche · di Pull + pull-ups · wo Benen 1 + pistol · do Mobility + zone 2 · vr Upper + handstand · za Benen 2 · zo Rust, met alle progressieladders en de skilllijst. Bestaande oefeningen worden op naam hergebruikt, dus je geschiedenis blijft. Seed-records krijgen een vaste id, zodat een tweede toestel geen dubbele records maakt. Wil je een nieuw programma laden, verhoog dan `PROGRAM_ID`. Daarna pas je alles aan onder **Schema**, **Skills** en per oefening.
+Het calisthenics-programma (`web/src/lib/program.ts`) wordt één keer per `PROGRAM_ID` geladen. Nu is dat upper/lower: ma Upper A · di Lower A · wo Mobility + zone 2 · do Upper B · vr Lower B · za/zo Rust, met alle progressieladders en de skilllijst. Bestaande oefeningen worden op naam hergebruikt, dus je geschiedenis blijft. Voortgang uit het oude schema (een verhoogd doel of een volgende stap in de ladder) neemt het nieuwe schema over. Seed-records krijgen een vaste id, zodat een tweede toestel geen dubbele records maakt. Voor een nieuw programma pas je `DAYS` aan en verhoog je `PROGRAM_ID`.
 
 ### Sync
 
