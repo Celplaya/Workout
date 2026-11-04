@@ -1,4 +1,4 @@
-import type { Frame, Pose } from './figure';
+import type { Frame, Joint, Pose } from './figure';
 
 // Exercise guides: an animated stick figure plus short form cues, matched to
 // exercises by name. Coordinates: viewBox 0 0 120 105, floor at y = 100,
@@ -27,6 +27,12 @@ export interface Guide {
   key?: number;
   cues: string[];
   tip?: string;
+  /** Highlighted body part with a short label (offset in viewBox units). */
+  mark?: { joint: Joint; label: string; dx: number; dy: number };
+  /** Arrow showing how a joint travels from frame `from` to frame `to`. */
+  arrow?: { joint: Joint; from: number; to: number; bend?: number };
+  /** Face direction flip for poses where the default guess is wrong. */
+  face?: 1 | -1;
 }
 
 const f = (p: Pose, hold?: number, tween?: number): Frame => ({ p, hold, tween });
@@ -150,6 +156,8 @@ export const GUIDES: Guide[] = [
   // ----- balance / planche -----
   {
     name: 'Elbow lever',
+    mark: { joint: 'eN', label: 'ellebogen tegen je heupen', dx: 0, dy: -26 },
+    arrow: { joint: 'aN', from: 0, to: 1, bend: -8 },
     frames: [
       f({ spine: [-10, -8], head: -15, an: [168, 90], af: [170, 90], ln: [157, 157, 180], lf: [159, 159, 180], at: ['hN', 62, 99] }, 700, 1000),
       f({ spine: [0, -2], head: -8, an: [170, 90], af: [172, 90], ln: [180, 180, 180], lf: [181, 181, 181], at: ['hN', 62, 99] }, 2200, 1300),
@@ -180,6 +188,8 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Planche lean',
+    mark: { joint: 'sh', label: 'schouders vóór je handen', dx: -3, dy: -24 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: -9 },
     frames: [f(pushTop, 500, 1000), f(lean, 2000, 1200)],
     key: 1,
     cues: [
@@ -475,10 +485,16 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pull-ups',
+    view: 'front',
     floor: false,
-    vb: [0, -10, 120, 115],
-    props: [BAR],
-    frames: [f(hang(), 600, 1200), f(pullTop(), 400, 800)],
+    vb: [0, -16, 120, 121],
+    props: [{ t: 'line', x1: 28, y1: 10, x2: 92, y2: 10, w: 3 }],
+    mark: { joint: 'head', label: 'kin over de stang', dx: 21, dy: -5 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 22 },
+    frames: [
+      f({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 90], lf: [89, 89, 90], at: ['sh', 60, 34.5], ik: { an: [78, 10, 1], af: [42, 10, -1] } }, 600, 1200),
+      f({ spine: [-90, -90], w: 7, hw: 4, ln: [93, 85, 90], lf: [87, 95, 90], at: ['sh', 60, 12], ik: { an: [78, 10, 1], af: [42, 10, -1] } }, 400, 800),
+    ],
     cues: [
       'Handen iets breder dan schouders, start in een volle hang.',
       'Trek eerst je schouders omlaag, dan je ellebogen naar je heupen.',

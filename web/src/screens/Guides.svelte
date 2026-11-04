@@ -1,5 +1,6 @@
 <script lang="ts">
   import Figure from '../components/Figure.svelte';
+  import Figure2 from '../components/Figure2.svelte';
   import { GUIDES } from '../lib/guides';
   import { openInfo } from '../lib/info.svelte';
 
@@ -7,14 +8,30 @@
   let { mode = '' }: { mode?: string } = $props();
   let q = $state('');
   const list = $derived(GUIDES.filter((g) => g.name.toLowerCase().includes(q.trim().toLowerCase())));
+
+  // '#/guides/preview': new drawing style next to the old one (time can be set for captures).
+  const PREVIEW = ['Elbow lever', 'Planche lean', 'Pull-ups'];
+  const previews = $derived(GUIDES.filter((g) => PREVIEW.includes(g.name)));
+  let t = $state<number | undefined>(undefined);
+  (window as unknown as { __t: (v: number) => void }).__t = (v: number) => (t = v);
 </script>
 
 <div class="page">
   <div class="header"><h1>Uitleg</h1></div>
-  {#if mode !== 'frames'}
+  {#if mode === 'preview'}
+    {#each previews as g (g.name)}
+      <div class="card fr pv" data-name={g.name}>
+        <span class="small">{g.name}</span>
+        <div class="pair">
+          <div class="cell"><Figure guide={g} frame={g.key ?? 0} /></div>
+          <div class="cell big"><Figure2 guide={g} time={t} /></div>
+        </div>
+      </div>
+    {/each}
+  {:else if mode !== 'frames'}
     <input class="field" placeholder="Zoek oefening…" bind:value={q} />
   {/if}
-  <div class="grid" class:frames={mode === 'frames'}>
+  <div class="grid" class:frames={mode === 'frames'} class:hide={mode === 'preview'}>
     {#each list as g (g.name)}
       {#if mode === 'frames'}
         <div class="card fr">
@@ -38,6 +55,14 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+  }
+  .hide {
+    display: none;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
   .grid.frames {
     grid-template-columns: 1fr;
