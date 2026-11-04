@@ -10,6 +10,7 @@ Alle data staat in PocketBase op de NAS, alleen bereikbaar via Tailscale. Er is 
 - **Voortgang:** een weekoverzicht en per oefening grafieken van je zwaarste gewicht en volume per week.
 - **Calisthenics:** oefeningen meet je in reps, seconden (holds, met ingebouwde hold-timer) of minuten. Per oefening in je schema staan een notitie en eventueel een eigen rusttijd.
 - **Skills:** een checklist per laag (snel af te vinken, hoofdfocus, lange termijn, later). Een skill gekoppeld aan een oefening vinkt de app voor je aan zodra je het doel haalt.
+- **Uitleg per oefening:** een ⓘ-knop bij elke oefening (Vandaag, tijdens het loggen en op de oefeningpagina) opent een bewegend poppetje met de juiste vorm en 3–4 tips. Alles staat ook onder Instellingen → Uitleg per oefening. De tekeningen staan in `web/src/lib/guides.ts` (houdingen als hoeken) en worden getekend door `web/src/lib/figure.ts`.
 - **Automatische progressie:** haal je een doel **2 sessies op rij**, dan stelt de app de volgende stap voor (bijvoorbeeld tuck L-sit → one-leg L-sit) of een hoger doel (+1 rep, +2/+5 s). Jij bevestigt met één tik of kiest "Niet nu".
 - **Offline:** alles wordt eerst lokaal opgeslagen (IndexedDB) en gesynchroniseerd zodra de server bereikbaar is. Een per ongeluk gesloten sessie gaat verder waar je was.
 

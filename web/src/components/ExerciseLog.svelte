@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoButton from './InfoButton.svelte';
   import Stepper from './Stepper.svelte';
   import { exerciseIncrement, logSet, remove, store } from '../lib/data.svelte';
   import { amount, kg, stepperUnit, target as fmtTarget } from '../lib/format';
@@ -131,6 +132,7 @@
 </script>
 
 <section class="ex" class:open class:complete>
+  <div class="headrow">
   <button class="head" onclick={onopen}>
     <div class="title">
       <h3>{name}</h3>
@@ -141,6 +143,8 @@
       {#if targetReps}<span class="muted small"> ×{amount(targetReps, measure)}</span>{/if}
     </div>
   </button>
+    <InfoButton {name} />
+  </div>
 
   {#if open}
     <div class="body">
@@ -199,7 +203,14 @@
     background: var(--surface);
     border-radius: var(--radius);
   }
+  .headrow {
+    display: flex;
+    align-items: center;
+    padding-right: 14px;
+  }
   .head {
+    flex: 1;
+    min-width: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;

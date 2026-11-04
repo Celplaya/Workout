@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InfoButton from '../components/InfoButton.svelte';
   import Proposals from '../components/Proposals.svelte';
   import SyncDot from '../components/SyncDot.svelte';
   import { addDays, isoDate, longDate, weekdayName, weekdayOf } from '../lib/dates';
@@ -100,7 +101,10 @@
                 <div>{store.exerciseById.get(p.exercise)?.name ?? '—'}</div>
                 {#if prev}<div class="small muted">vorige: {prev}</div>{/if}
               </div>
-              <span class="num muted">{target(p.target_sets, p.target_reps, store.exerciseById.get(p.exercise)?.measure)}</span>
+              <span class="right">
+                <span class="num muted">{target(p.target_sets, p.target_reps, store.exerciseById.get(p.exercise)?.measure)}</span>
+                <InfoButton name={store.exerciseById.get(p.exercise)?.name} />
+              </span>
             </div>
           {/each}
         </div>
@@ -137,6 +141,12 @@
     text-align: left;
     background: var(--accent);
     color: var(--accent-ink);
+  }
+  .right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
   }
   .chip {
     align-self: flex-start;

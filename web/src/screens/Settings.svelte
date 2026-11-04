@@ -50,6 +50,10 @@
     <Stepper bind:value={increment} step={0.25} min={0.25} unit="kg" />
   </div>
 
+  <a class="card row-link" href="#/guides">
+    <span>Uitleg per oefening</span><span class="muted">›</span>
+  </a>
+
   <div class="card stack">
     <span class="eyebrow">Synchronisatie</span>
     <div class="spread"><span>Server</span><span class={sync.online ? 'up' : 'down'}>{sync.online ? 'Bereikbaar' : 'Offline'}</span></div>
@@ -74,6 +78,12 @@
 </div>
 
 <style>
+  .row-link {
+    display: flex;
+    justify-content: space-between;
+    text-decoration: none;
+    font-weight: 600;
+  }
   code {
     word-break: break-all;
   }

@@ -1,5 +1,8 @@
 <script lang="ts">
   import Chart from '../components/Chart.svelte';
+  import Figure from '../components/Figure.svelte';
+  import { guideFor } from '../lib/guides';
+  import { openInfo } from '../lib/info.svelte';
   import Stepper from '../components/Stepper.svelte';
   import { parseDate, shortDate } from '../lib/dates';
   import { patch, store } from '../lib/data.svelte';
@@ -73,6 +76,18 @@
   <div class="page">
     <div class="header"><button class="back" onclick={() => history.back()}>‹ Terug</button></div>
     <input class="field title" value={ex.name} onchange={rename} aria-label="Naam" />
+
+    {#if guideFor(ex.name)}
+      {@const g = guideFor(ex.name)!}
+      <button class="card howto" onclick={() => openInfo(ex.name)}>
+        <div class="mini-fig"><Figure guide={g} frame={g.key ?? 0} /></div>
+        <div>
+          <span class="eyebrow">Uitleg</span>
+          <div class="small muted">{g.cues[0]}</div>
+          <span class="small link">Bekijk uitvoering ›</span>
+        </div>
+      </button>
+    {/if}
 
     {#if best}
       <div class="card spread">
@@ -184,6 +199,23 @@
 {/if}
 
 <style>
+  .howto {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    text-align: left;
+  }
+  .mini-fig {
+    flex: none;
+    width: 92px;
+    aspect-ratio: 120 / 105;
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .link {
+    color: var(--accent);
+  }
   .title {
     font-size: 28px;
     font-weight: 700;
