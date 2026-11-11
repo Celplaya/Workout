@@ -25,8 +25,18 @@ describe('guides', () => {
         for (const [k, v] of Object.entries(s)) {
           expect(Number.isFinite(v[0]) && Number.isFinite(v[1]), `${g.name} ${k}`).toBe(true);
         }
-        expect(dist(s.shN, s.eN), `${g.name} upper arm`).toBeCloseTo(L.upper, 0);
-        expect(dist(s.hipN, s.kN), `${g.name} thigh`).toBeCloseTo(L.thigh, 0);
+        // Limbs keep their length (shorter only where a pose foreshortens them).
+        const short = g.frames.some((fr) => fr.p.fs);
+        for (const [x, y, l, what] of [
+          [s.shN, s.eN, L.upper, 'upper arm'],
+          [s.eF, s.hF, L.fore, 'forearm'],
+          [s.hipN, s.kN, L.thigh, 'thigh'],
+          [s.kF, s.aF, L.shin, 'shin'],
+        ] as const) {
+          const d = dist(x, y);
+          expect(d, `${g.name} ${what}`).toBeLessThan(l + 0.5);
+          expect(d, `${g.name} ${what}`).toBeGreaterThan(short ? l * 0.5 : l - 0.5);
+        }
       }
     }
   });
@@ -38,5 +48,19 @@ describe('figure IK', () => {
     expect(dist(s.hN, [60, 10])).toBeLessThan(0.01);
     expect(dist(s.shN, s.eN)).toBeCloseTo(L.upper, 5);
     expect(dist(s.eN, s.hN)).toBeCloseTo(L.fore, 5);
+  });
+});
+
+describe('figure extras', () => {
+  it('shrug moves the arm roots along the spine, not the head', () => {
+    const a = solve({ spine: [-90, -90], at: ['sh', 60, 40] });
+    const b = solve({ spine: [-90, -90], at: ['sh', 60, 40], shrug: 3 });
+    expect(b.shN[1]).toBeCloseTo(a.shN[1] - 3, 5);
+    expect(b.head).toEqual(a.head);
+  });
+  it('foreshortens a limb', () => {
+    const s = solve({ spine: [-90, -90], at: ['hip', 60, 60], ln: [90, 90], fs: { ln: 0.5 } });
+    expect(dist(s.hipN, s.kN)).toBeCloseTo(L.thigh / 2, 5);
+    expect(dist(s.hipF, s.kF)).toBeCloseTo(L.thigh, 5);
   });
 });

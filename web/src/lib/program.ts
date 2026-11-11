@@ -7,8 +7,30 @@ import type { DayKind, Measure } from './types';
 //
 // v2 (25 okt 2026): upper/lower — ma Upper A · di Lower A · wo Mobility ·
 // do Upper B · vr Lower B · za/zo rust. Sessies ± 60–75 min.
+//
+// Small changes that should not reset the plan go in PATCHES with a new
+// PROGRAM_REV: they update the exercise ladders and touch only the plan items
+// they name. A new PROGRAM_ID replaces the whole week.
 
 export const PROGRAM_ID = 'calisthenics-2026-10-ul';
+export const PROGRAM_REV = 2;
+
+export interface Patch {
+  rev: number;
+  /** Plan items doing `from` switch to `to` (sets and target are kept). */
+  swap?: [from: string, to: string][];
+  /** Exercises whose cue is reset to the program's text. */
+  cues?: string[];
+}
+
+export const PATCHES: Patch[] = [
+  {
+    // 11 nov 2026: materiaal (box 30 cm, stepper) en ladders zonder "voeten nog hoger".
+    rev: 2,
+    swap: [['Bodyweight rows', 'Bodyweight rows voeten verhoogd']],
+    cues: ['Bodyweight rows voeten verhoogd', 'Pike push-ups voeten verhoogd', 'Single leg calf raises', 'Pistol links negatives', 'Step-ups'],
+  },
+];
 
 export interface ExerciseDef {
   name: string;
@@ -21,6 +43,10 @@ export interface ExerciseDef {
   sets?: number;
   target?: number;
   cue?: string;
+  /** With `next`: first raise the target up to this value, then move on. */
+  cap?: number;
+  /** How to make it harder with the equipment at hand (shown in the guide and in proposals). */
+  harder?: string;
 }
 
 const s = (name: string, extra: Omit<ExerciseDef, 'name' | 'measure'> = {}): ExerciseDef => ({ name, measure: 'seconds', ...extra });
@@ -35,13 +61,20 @@ export const EXERCISES: ExerciseDef[] = [
   // push / planche
   s('Elbow lever', { next: 'Crow pose', sets: 4, target: 10 }),
   s('Crow pose', { progress: true }),
-  s('Planche lean', { progress: true, cue: 'Dieper leunen dan je gewend bent' }),
+  s('Planche lean', { progress: true, cue: 'Dieper leunen dan je gewend bent', harder: 'Verder leunen telt zwaarder dan langer vasthouden. Op parallettes blijven je polsen recht.' }),
   s('Tuck planche', { next: 'Advanced tuck planche', sets: 6, target: 5, cue: 'Op parallettes' }),
   s('Advanced tuck planche', { progress: true, cue: 'Op parallettes' }),
-  r('Weighted dips', { cue: 'Eerst 4×7, dan gewicht omhoog' }),
-  r('Archer push-ups', { next: 'Pseudo planche push-ups', sets: 3, target: 8, cue: 'Reps per kant' }),
-  r('Pseudo planche push-ups', { progress: true }),
-  r('Pike push-ups voeten verhoogd', { next: 'Wall HSPU (deel-ROM)', sets: 3, target: 5 }),
+  r('Weighted dips', { cue: 'Eerst 4×7, dan gewicht omhoog', harder: 'Riem met schijf of een dumbbell tussen je voeten; een gewichtvest is hier niet nodig.' }),
+  r('Archer push-ups', { next: 'Pseudo planche push-ups', sets: 3, target: 8, cue: 'Reps per kant', harder: 'Gestrekte hand op je stepper maakt hem lichter, voeten op de stepper zwaarder.' }),
+  r('Pseudo planche push-ups', { progress: true, harder: 'Verder naar voren leunen, of je voeten op je stepper.' }),
+  r('Pike push-ups voeten verhoogd', {
+    next: 'Pike push-ups voeten op box', sets: 3, target: 5, cap: 10, cue: 'Tenen op de stepper · heupen boven je handen',
+    harder: 'Stepper een stand hoger, of je handen dichter bij de stepper zodat je romp verticaler staat. Bij 3×10: voeten op je grote box.',
+  }),
+  r('Pike push-ups voeten op box', {
+    next: 'Wall HSPU (deel-ROM)', sets: 3, target: 5, cap: 8, cue: 'Tenen op de box · romp bijna verticaal',
+    harder: 'Loop je handen verder terug tot je romp verticaal is. Bij 3×8: wall HSPU met beperkte diepte.',
+  }),
   r('Bodyweight skull crusher', { progress: true, cue: 'Voeten verder naar achteren of bench lager = zwaarder' }),
   r('Pike to planche lean', { progress: true }),
   r('Incline bench press'),
@@ -57,15 +90,19 @@ export const EXERCISES: ExerciseDef[] = [
   s('Side plank', { progress: true, cue: 'Tijd per kant' }),
   // pull
   r('Scapular pull-ups'),
-  r('Pull-ups', { progress: true, cue: '3 min rust · stop 1 rep voor failure' }),
+  r('Pull-ups', { progress: true, cue: '3 min rust · stop 1 rep voor failure', harder: 'Eerst naar 10 nette reps per set. Pas daarna is extra gewicht (riem of vest, 2,5–5 kg) zinvol.' }),
   r('Pull-up negatives', { cue: '5 sec zakken' }),
   r('Explosive pull-ups', { cue: 'Borst richting de stang, alleen clean' }),
   r('Hammer grip pull-ups', { progress: true, cue: 'Niet tot failure' }),
   s('Advanced tuck front lever', { next: 'One-leg front lever', sets: 5, target: 6 }),
   s('One-leg front lever', { next: 'Straddle front lever', sets: 5, target: 5 }),
   s('Straddle front lever', { progress: true }),
-  r('Bodyweight rows', { next: 'Bodyweight rows voeten verhoogd', sets: 4, target: 8 }),
-  r('Bodyweight rows voeten verhoogd', { progress: true }),
+  r('Bodyweight rows', { next: 'Bodyweight rows voeten verhoogd', sets: 3, target: 8, harder: 'Hielen op je box (± 30 cm) is de volgende stap.' }),
+  r('Bodyweight rows voeten verhoogd', {
+    progress: true, next: 'Archer rows', sets: 3, target: 8, cap: 12, cue: 'Hielen op de box (30 cm) · 1 tel vasthouden bovenin',
+    harder: 'Je box hoeft niet hoger. Eerst de stang lager (lichaam horizontaal), dan 3 sec zakken en 2 sec vasthouden. Bij 3×12: archer rows. Extra gewicht (vest of schijf op je heupen) kan ook, maar is nog niet nodig.',
+  }),
+  r('Archer rows', { progress: true, sets: 3, target: 5, cue: 'Reps per kant · voeten op de box', harder: 'Steun steeds minder op de gestrekte arm (alleen vingers). Daarna: one-arm rows.' }),
   r('Bodyweight curls', { progress: true }),
   r('Pulldown', { cue: 'Of cable row' }),
   r('Rows'),
@@ -79,19 +116,19 @@ export const EXERCISES: ExerciseDef[] = [
   s('Shoulder stand', { progress: true }),
   s('Straddle sit', { progress: true }),
   // legs
-  r('Pistol links negatives', { next: 'Pistol links', sets: 3, target: 3, cue: '5 sec zakken, steun als het moet' }),
+  r('Pistol links negatives', { next: 'Pistol links', sets: 3, target: 3, cue: '5 sec zakken tot op je box, met twee benen omhoog', harder: 'Zak naar een steeds lager doel: grote box → stepper → vrij.' }),
   r('Pistol links', { progress: true }),
   r('Pistol rechts', { progress: true, cue: '1 sec pauze onderin' }),
   r('Bulgarian split squat', { cue: 'Reps per been · elke 2 weken +2 kg' }),
   r('Squats tempo', { cue: '3 sec zakken, 1 sec pauze' }),
   r('Reverse lunges', { cue: 'Reps per been' }),
-  r('Single leg calf raises', { cue: 'Reps per been' }),
+  r('Single leg calf raises', { cue: 'Reps per been · op de rand van je stepper', harder: 'Dumbbell in één hand, of 2 sec vasthouden bovenin.' }),
   r('Reverse nordic partials', { next: 'Reverse nordic', sets: 3, target: 5 }),
   r('Reverse nordic', { progress: true }),
   r('Archer squats', { progress: true, cue: 'Reps per kant' }),
   r('Sissy squats', { progress: true }),
-  r('Single-leg glute bridges', { cue: 'Reps per been' }),
-  r('Step-ups', { cue: 'Reps per been' }),
+  r('Single-leg glute bridges', { cue: 'Reps per been', harder: 'Schouders of voet op je stepper voor meer bewegingsbereik.' }),
+  r('Step-ups', { cue: 'Reps per been · op je grote box', harder: '3 sec zakken of dumbbells erbij; een hogere box hoeft niet.' }),
   // mobility
   s('Cat cow'),
   s('Cobra pose'),
@@ -135,7 +172,7 @@ export const DAYS: DayDef[] = [
       ['Weighted dips', 4, 7],
       ['Advanced tuck front lever', 5, 8],
       ['Archer push-ups', 3, 6],
-      ['Bodyweight rows', 3, 10],
+      ['Bodyweight rows voeten verhoogd', 3, 10],
       ['Muscle-up step 1 (false grip)', 3, 3],
     ],
   },
@@ -209,6 +246,14 @@ export const DAYS: DayDef[] = [
   { name: 'Rust', kind: 'rest', items: [] },
   { name: 'Rust', kind: 'rest', items: [] },
 ];
+
+const slug = (name: string) => name.trim().toLowerCase();
+const byName = new Map(EXERCISES.map((e) => [slug(e.name), e]));
+
+/** Program definition for an exercise (by name), for the cap and "harder" advice. */
+export function defFor(name: string | undefined): ExerciseDef | undefined {
+  return name ? byName.get(slug(name)) : undefined;
+}
 
 export interface SkillDef {
   name: string;

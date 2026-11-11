@@ -1,3 +1,4 @@
+import { defFor } from './program';
 import { bestValue, groupBy } from './stats';
 import type { Exercise, Measure, PlanItem, Session, Skill, WorkSet } from './types';
 
@@ -16,6 +17,8 @@ export type Proposal =
       to: Exercise;
       sets: number;
       target: number;
+      /** Set-up of the new exercise. */
+      hint?: string;
     }
   | {
       kind: 'raise';
@@ -24,6 +27,11 @@ export type Proposal =
       exercise: Exercise;
       from: number;
       to: number;
+      /** Ladder step that follows once the cap is reached. */
+      then?: Exercise;
+      cap?: number;
+      /** Other ways to make it harder. */
+      hint?: string;
     }
   | {
       kind: 'skill';
@@ -80,8 +88,11 @@ export function proposals(input: ProgressInput): Proposal[] {
     if (!recent.every((p) => hitTarget(p.sets, item.target_sets, item.target_reps))) continue;
     const latest = recent[0].session.id;
 
+    const def = defFor(ex.name);
     const next = ex.next ? input.exercises.get(ex.next) : undefined;
-    if (next) {
+    // A capped step first grows to its cap (e.g. 3×12) before the ladder moves on.
+    const growing = !!def?.cap && item.target_reps < def.cap;
+    if (next && !growing) {
       const key = `swap:${item.id}:${latest}`;
       if (input.dismissed.has(key)) continue;
       out.push({
@@ -92,16 +103,28 @@ export function proposals(input: ProgressInput): Proposal[] {
         to: next,
         sets: next.default_sets || item.target_sets,
         target: next.default_target || item.target_reps,
+        hint: next.cue || undefined,
       });
       continue;
     }
 
     // Weighted work already gets the "+2,5 kg" hint while logging.
-    if (!ex.progress || recent.some((p) => p.sets.some((s) => s.weight > 0))) continue;
+    if (!(ex.progress || growing) || recent.some((p) => p.sets.some((s) => s.weight > 0))) continue;
     const key = `raise:${item.id}:${latest}`;
     if (input.dismissed.has(key)) continue;
     const step = raiseStep(item.target_reps, ex.measure);
-    out.push({ kind: 'raise', key, item, exercise: ex, from: item.target_reps, to: item.target_reps + step });
+    const to = growing ? Math.min(def!.cap!, item.target_reps + step) : item.target_reps + step;
+    out.push({
+      kind: 'raise',
+      key,
+      item,
+      exercise: ex,
+      from: item.target_reps,
+      to,
+      then: growing ? next : undefined,
+      cap: growing ? def!.cap : undefined,
+      hint: def?.harder,
+    });
   }
 
   for (const skill of input.skills) {

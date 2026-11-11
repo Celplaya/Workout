@@ -30,6 +30,10 @@ export interface Pose {
   at: [Joint, number, number];
   /** Pin a hand or foot to (x, y); bend picks the side the elbow/knee goes to. */
   ik?: Partial<Record<Limb, [number, number, number?]>>;
+  /** Arm roots shifted along the spine: > 0 = shoulders shrugged toward the ears. */
+  shrug?: number;
+  /** Foreshortening (0–1) for a limb or the spine that points toward the viewer. */
+  fs?: Partial<Record<Limb | 'sp', number>>;
 }
 
 export interface Solved {
@@ -39,7 +43,7 @@ export interface Solved {
   head: V;
 }
 
-export const L = { spine: 14, upper: 14, fore: 13, thigh: 17, shin: 17, foot: 5, neck: 2.5, head: 5.2 };
+export const L = { spine: 13, upper: 14, fore: 13, thigh: 18, shin: 18, foot: 5, neck: 2.5, head: 5.2 };
 
 const DEF = { an: [80, 75], af: [100, 95], ln: [90, 90], lf: [92, 92] };
 
@@ -70,30 +74,32 @@ export function solve(p: Pose): Solved {
   const w = p.w ?? 0;
   const hw = p.hw ?? 0;
 
+  const fs = p.fs ?? {};
+  const sp = L.spine * (fs.sp ?? 1);
   const hip: V = [0, 0];
-  const mid = add(hip, dir(p.spine[0]), L.spine);
-  const sh = add(mid, dir(p.spine[1]), L.spine);
+  const mid = add(hip, dir(p.spine[0]), sp);
+  const sh = add(mid, dir(p.spine[1]), sp);
   const up = dir(p.spine[1]);
   const lo = dir(p.spine[0]);
   const perpU: V = [-up[1], up[0]];
   const perpL: V = [-lo[1], lo[0]];
-  const shN = add(sh, perpU, w);
-  const shF = add(sh, perpU, -w);
+  const shN = add(add(sh, perpU, w), up, p.shrug ?? 0);
+  const shF = add(add(sh, perpU, -w), up, p.shrug ?? 0);
   const hipN = add(hip, perpL, hw);
   const hipF = add(hip, perpL, -hw);
 
-  const arm = (root: V, a: number[]): [V, V] => {
-    const e = add(root, dir(a[0]), L.upper);
-    return [e, add(e, dir(a[1]), L.fore)];
+  const arm = (root: V, a: number[], k = 1): [V, V] => {
+    const e = add(root, dir(a[0]), L.upper * k);
+    return [e, add(e, dir(a[1]), L.fore * k)];
   };
-  const leg = (root: V, a: number[]): [V, V] => {
-    const k = add(root, dir(a[0]), L.thigh);
-    return [k, add(k, dir(a[1]), L.shin)];
+  const leg = (root: V, a: number[], k = 1): [V, V] => {
+    const kn = add(root, dir(a[0]), L.thigh * k);
+    return [kn, add(kn, dir(a[1]), L.shin * k)];
   };
-  let [eN, hN] = arm(shN, an);
-  let [eF, hF] = arm(shF, af);
-  let [kN, aN] = leg(hipN, ln);
-  let [kF, aF] = leg(hipF, lf);
+  let [eN, hN] = arm(shN, an, fs.an);
+  let [eF, hF] = arm(shF, af, fs.af);
+  let [kN, aN] = leg(hipN, ln, fs.ln);
+  let [kF, aF] = leg(hipF, lf, fs.lf);
   const head = add(sh, dir(p.head ?? p.spine[1]), (p.neck ?? L.neck) + L.head);
 
   const pts: Record<string, V> = { hip, mid, sh, shN, shF, hipN, hipF, eN, hN, eF, hF, kN, aN, kF, aF, head };
@@ -103,10 +109,12 @@ export function solve(p: Pose): Solved {
   ({ eN, hN, eF, hF, kN, aN, kF, aF } = pts as unknown as Solved);
 
   const ik = p.ik ?? {};
-  if (ik.an) [eN, hN] = twoBone(pts.shN, [ik.an[0], ik.an[1]], L.upper, L.fore, ik.an[2] ?? 1);
-  if (ik.af) [eF, hF] = twoBone(pts.shF, [ik.af[0], ik.af[1]], L.upper, L.fore, ik.af[2] ?? 1);
-  if (ik.ln) [kN, aN] = twoBone(pts.hipN, [ik.ln[0], ik.ln[1]], L.thigh, L.shin, ik.ln[2] ?? 1);
-  if (ik.lf) [kF, aF] = twoBone(pts.hipF, [ik.lf[0], ik.lf[1]], L.thigh, L.shin, ik.lf[2] ?? 1);
+  const two = (root: V, t: [number, number, number?], l1: number, l2: number, k = 1) =>
+    twoBone(root, [t[0], t[1]], l1 * k, l2 * k, t[2] ?? 1);
+  if (ik.an) [eN, hN] = two(pts.shN, ik.an, L.upper, L.fore, fs.an);
+  if (ik.af) [eF, hF] = two(pts.shF, ik.af, L.upper, L.fore, fs.af);
+  if (ik.ln) [kN, aN] = two(pts.hipN, ik.ln, L.thigh, L.shin, fs.ln);
+  if (ik.lf) [kF, aF] = two(pts.hipF, ik.lf, L.thigh, L.shin, fs.lf);
 
   const foot = (k: V, a: V, l: number[]) => add(a, dir(l[2] ?? ang(sub(a, k)) - 90), L.foot);
   return {
@@ -168,6 +176,14 @@ export function between(a: Pose, b: Pose, t: number): Solved {
       lf: lerpArr(a.lf, b.lf, DEF.lf, t),
       w: lerp(a.w ?? 0, b.w ?? 0, t),
       hw: lerp(a.hw ?? 0, b.hw ?? 0, t),
+      shrug: lerp(a.shrug ?? 0, b.shrug ?? 0, t),
+      fs: {
+        sp: lerp(a.fs?.sp ?? 1, b.fs?.sp ?? 1, t),
+        an: lerp(a.fs?.an ?? 1, b.fs?.an ?? 1, t),
+        af: lerp(a.fs?.af ?? 1, b.fs?.af ?? 1, t),
+        ln: lerp(a.fs?.ln ?? 1, b.fs?.ln ?? 1, t),
+        lf: lerp(a.fs?.lf ?? 1, b.fs?.lf ?? 1, t),
+      },
       at: [a.at[0], lerp(a.at[1], b.at[1], t), lerp(a.at[2], b.at[2], t)],
       ik,
     });
@@ -178,27 +194,30 @@ export function between(a: Pose, b: Pose, t: number): Solved {
   for (const k of Object.keys(sa) as (keyof Solved)[]) {
     m[k] = [lerp(sa[k][0], sb[k][0], t), lerp(sa[k][1], sb[k][1], t)];
   }
-  // Blended points shorten limbs; rebuild each chain with the real lengths.
-  const seg = (from: V, to: V, l: number): V => {
+  // Blended points shorten limbs; rebuild each chain with the real lengths
+  // (blended too, for foreshortened limbs).
+  const dist = (q: Solved, x: keyof Solved, y: keyof Solved) => len(sub(q[y], q[x]));
+  const seg = (from: V, to: V, x: keyof Solved, y: keyof Solved): V => {
+    const l = lerp(dist(sa, x, y), dist(sb, x, y), t);
     const d = sub(to, from);
     const n = len(d) || 1;
     return add(from, d, l / n);
   };
   const out = { ...m };
-  out.mid = seg(m.hip, m.mid, L.spine);
-  out.sh = seg(out.mid, m.sh, L.spine);
+  out.mid = seg(m.hip, m.mid, 'hip', 'mid');
+  out.sh = seg(out.mid, m.sh, 'mid', 'sh');
   const shift = sub(out.sh, m.sh);
   for (const k of ['shN', 'shF', 'head'] as const) out[k] = add(m[k], shift);
-  out.eN = seg(out.shN, m.eN, L.upper);
-  out.hN = seg(out.eN, m.hN, L.fore);
-  out.eF = seg(out.shF, m.eF, L.upper);
-  out.hF = seg(out.eF, m.hF, L.fore);
-  out.kN = seg(m.hipN, m.kN, L.thigh);
-  out.aN = seg(out.kN, m.aN, L.shin);
-  out.tN = seg(out.aN, m.tN, L.foot);
-  out.kF = seg(m.hipF, m.kF, L.thigh);
-  out.aF = seg(out.kF, m.aF, L.shin);
-  out.tF = seg(out.aF, m.tF, L.foot);
+  out.eN = seg(out.shN, m.eN, 'shN', 'eN');
+  out.hN = seg(out.eN, m.hN, 'eN', 'hN');
+  out.eF = seg(out.shF, m.eF, 'shF', 'eF');
+  out.hF = seg(out.eF, m.hF, 'eF', 'hF');
+  out.kN = seg(m.hipN, m.kN, 'hipN', 'kN');
+  out.aN = seg(out.kN, m.aN, 'kN', 'aN');
+  out.tN = seg(out.aN, m.tN, 'aN', 'tN');
+  out.kF = seg(m.hipF, m.kF, 'hipF', 'kF');
+  out.aF = seg(out.kF, m.aF, 'kF', 'aF');
+  out.tF = seg(out.aF, m.tF, 'aF', 'tF');
   return out;
 }
 
@@ -210,7 +229,8 @@ export interface Frame {
   tween?: number;
 }
 
-const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+// Smooth start and stop, a little quicker through the middle than a plain sine.
+const ease = (t: number) => t * t * t * (t * (6 * t - 15) + 10) * 0.5 + (0.5 - Math.cos(Math.PI * t) / 2) * 0.5;
 
 /** Total loop length in ms. */
 export function cycle(frames: Frame[]): number {

@@ -50,6 +50,7 @@
             {target(p.item.target_sets, p.item.target_reps, p.from.measure)} {STREAK}× op rij gehaald. Start
             {p.to.name} op {target(p.sets, p.target, p.to.measure)}.
           </p>
+          {#if p.hint}<p class="small hint"><b>Opstelling:</b> {p.hint}</p>{/if}
           <div class="actions">
             <button class="btn primary" disabled={!!busy} onclick={() => accept(p)}>Vervangen</button>
             <button class="btn ghost" disabled={!!busy} onclick={() => later(p)}>Niet nu</button>
@@ -60,7 +61,9 @@
           <p class="small muted">
             {target(p.item.target_sets, p.from, p.exercise.measure)} {STREAK}× op rij gehaald. Nieuw doel:
             {target(p.item.target_sets, p.to, p.exercise.measure)}.
+            {#if p.then && p.cap}Bij {target(p.item.target_sets, p.cap, p.exercise.measure)} stap je over op {p.then.name}.{/if}
           </p>
+          {#if p.hint}<p class="small hint"><b>Zwaarder maken:</b> {p.hint}</p>{/if}
           <div class="actions">
             <button class="btn primary" disabled={!!busy} onclick={() => accept(p)}>Verhogen</button>
             <button class="btn ghost" disabled={!!busy} onclick={() => later(p)}>Niet nu</button>
@@ -91,6 +94,15 @@
   }
   p {
     margin: 0;
+  }
+  .hint {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    line-height: 1.4;
+  }
+  .hint b {
+    color: var(--accent);
   }
   .actions {
     display: grid;

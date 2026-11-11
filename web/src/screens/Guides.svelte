@@ -6,18 +6,27 @@
   // '#/guides/frames' shows every key pose (used to check the drawings).
   let { mode = '' }: { mode?: string } = $props();
   let q = $state('');
+  import { cycle } from '../lib/figure';
+  const MIDS = [0.08, 0.2, 0.32, 0.45, 0.58, 0.7, 0.82, 0.94];
   const list = $derived(GUIDES.filter((g) => g.name.toLowerCase().includes(q.trim().toLowerCase())));
 
 </script>
 
 <div class="page">
   <div class="header"><h1>Uitleg</h1></div>
-  {#if mode !== 'frames'}
+  {#if mode !== 'frames' && mode !== 'mids'}
     <input class="field" placeholder="Zoek oefening…" bind:value={q} />
   {/if}
-  <div class="grid" class:frames={mode === 'frames'}>
+  <div class="grid" class:frames={mode === 'frames' || mode === 'mids'}>
     {#each list as g (g.name)}
-      {#if mode === 'frames'}
+      {#if mode === 'mids'}
+        <div class="card fr">
+          <span class="small">{g.name}</span>
+          <div class="row-f mids">
+            {#each MIDS as m (m)}<div class="cell"><Figure guide={{ ...g, mark: undefined, arrow: undefined }} time={m * cycle(g.frames)} /></div>{/each}
+          </div>
+        </div>
+      {:else if mode === 'frames'}
         <div class="card fr">
           <span class="small">{g.name}</span>
           <div class="row-f">
@@ -66,5 +75,8 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
+  }
+  .row-f.mids {
+    grid-template-columns: repeat(8, 1fr);
   }
 </style>

@@ -5,9 +5,13 @@ import type { Frame, Joint, Pose } from './figure';
 // the figure faces right. Angles: 0 = right, 90 = down, -90 = up.
 
 export type Prop =
-  | { t: 'bar'; x: number; y: number }
-  | { t: 'wall'; x: number; from?: number; to?: number }
-  | { t: 'box'; x: number; y: number; w: number; h: number }
+  | { t: 'bar'; x: number; y: number; post?: boolean }
+  | { t: 'wall'; x: number; from?: number; to?: number; side?: 1 | -1 }
+  | { t: 'box'; x: number; y: number; w: number; h: number; label?: string }
+  | { t: 'stepper'; x: number; y: number; w: number; label?: string }
+  | { t: 'bench'; x: number; y: number; w: number }
+  | { t: 'pbar'; x: number; y: number; w: number }
+  | { t: 'vest' }
   | { t: 'line'; x1: number; y1: number; x2: number; y2: number; w?: number }
   | { t: 'cable'; x: number; y: number }
   | { t: 'dumbbells' }
@@ -33,66 +37,101 @@ export interface Guide {
   arrow?: { joint: Joint; from: number; to: number; bend?: number };
   /** Face direction flip for poses where the default guess is wrong. */
   face?: 1 | -1;
+  /** Hands are closed around something even though no pose pins them. */
+  grip?: boolean;
+  /** Direction flat hands point to (default: toward the head/chest side). */
+  fingers?: 1 | -1;
 }
 
 const f = (p: Pose, hold?: number, tween?: number): Frame => ({ p, hold, tween });
 
+// ---------- measurements ----------
+// Standing figure: ankle 97.9, hip 61.9, shoulder 35.9, top of the head ± 23.
+const FOOT = 97.9; // ankle height with the foot flat on the floor
+const TOE = 93.2; // ankle height on the ball of the foot (foot angle 85)
+const hand = (x: number, y = 98.3, b = 1): [number, number, number] => [x, y, b];
+const hands = (x: number, y = 98.3, b = 1): Pose['ik'] => ({ an: [x, y, b], af: [x + 1.5, y, b] });
+
 // ---------- shared poses ----------
 
 const BAR = { t: 'bar', x: 60, y: 10 } as const;
-const onBar = { an: [60, 10, 1], af: [61.5, 10, 1] } as Pose['ik'];
+const onBar = hands(60, 10);
+const HANG_VB: [number, number, number, number] = [0, -10, 120, 115];
 
+/** Side view, hanging from the bar (arm roots 27 below it). */
 const hang = (o: Partial<Pose> = {}): Pose => ({
-  spine: [-90, -90], ln: [90, 90], lf: [93, 93], at: ['sh', 60, 37.2], ik: onBar, ...o,
-});
-const pullTop = (o: Partial<Pose> = {}): Pose => ({
-  spine: [-97, -97], ln: [80, 86], lf: [83, 90], at: ['sh', 56, 12], ik: onBar, ...o,
+  spine: [-90, -90], ln: [90, 90, 60], lf: [92, 92, 62], at: ['sh', 60, 37.1], ik: onBar, ...o,
 });
 
-const hand = (x: number, y = 99, b = 1): [number, number, number] => [x, y, b];
-
-// Front-lever family: hang → lever (anchor on the near hand).
-const lever = (ln: number[], lf: number[], spine: [number, number] = [-180, -180]): Pose => ({
-  spine, an: [-73, -73], af: [-71, -71], ln, lf, at: ['hN', 60, 10],
-});
-const leverHang: Pose = { spine: [-90, -90], an: [-90, -90], af: [-88, -88], ln: [90, 90], lf: [93, 93], at: ['hN', 60, 10] };
-
-// Planche family
-const pushTop: Pose = { spine: [-22, -22], ln: [158, 158, 90], lf: [158, 158, 92], at: ['aN', 8, 95], ik: { an: hand(65.5), af: hand(67) } };
-const lean: Pose = { spine: [-20, -14], ln: [160, 160, 95], lf: [160, 160, 97], at: ['aN', 17, 95], ik: { an: hand(65.5), af: hand(67) } };
-const PAR = { t: 'box', x: 55, y: 92, w: 18, h: 8 } as const;
-
-// Quadruped (hands and knees)
-const quad = (spine: [number, number], head?: number, thigh = 90): Pose => ({
-  spine, head, ln: [thigh, 180, 180], lf: [thigh + 2, 180, 180], at: ['kN', 32, 96],
-  ik: { an: hand(58), af: hand(59.5) },
+// Front lever family: everything hangs from the near hand.
+const leverHang: Pose = { spine: [-90, -90], an: [-90, -90], af: [-88, -88], ln: [90, 90, 60], lf: [92, 92, 62], at: ['hN', 60, 10] };
+const lever = (arms: number, ln: number[], lf: number[]): Pose => ({
+  spine: [-180, -180], an: [arms, arms], af: [arms + 2, arms + 2], ln, lf, at: ['hN', 60, 10],
 });
 
-// Seated L-sit family on parallettes
-const PAR_L = { t: 'box', x: 52, y: 86, w: 16, h: 14 } as const;
-const lsit = (ln: number[], lf: number[], spine: [number, number] = [-92, -90]): Pose => ({
-  spine, ln, lf, at: ['sh', 60, 59.2], ik: { an: [60, 86, 1], af: [61.5, 86, 1] },
+// Push-up line: ankles on the balls of the feet, body straight.
+const plank = (ax: number, a: number, o: Partial<Pose> = {}): Pose => ({
+  spine: [a, a], ln: [a + 180, a + 180, 85], lf: [a + 181, a + 181, 87], at: ['aN', ax, TOE], ik: hands(66), ...o,
 });
+const pushTop = plank(8, -20.6);
+const lean = plank(17.4, -18.7, { spine: [-20.5, -16.5] });
 
-// Pistol (near leg is the standing leg)
-const pistolTop: Pose = { spine: [-88, -88], an: [0, 0], af: [2, 2], ln: [90, 90], lf: [28, 28, 28], at: ['aN', 56, 97] };
-const pistolBottom: Pose = { spine: [-52, -58], an: [-2, -2], af: [0, 0], ln: [-15, 112], lf: [-6, -6, -6], at: ['aN', 56, 97] };
-
-// Inverted rows
-const row = (spine: number, foot: number): Pose => ({
-  spine: [spine, spine], ln: [spine + 180, spine + 180, foot], lf: [spine + 181, spine + 181, foot],
-  at: ['aN', 10, 96], ik: { an: [70, 60, 1], af: [71.5, 60, 1] },
-});
-
-// Handstand
+// Handstand, chest facing left (as after a kick-up from standing facing right).
 const hs = (x: number, o: Partial<Pose> = {}): Pose => ({
-  spine: [90, 90], ln: [-90, -90, -90], lf: [-92, -92, -92], at: ['sh', x, 72.2],
-  ik: { an: hand(x + 2.5), af: hand(x - 2.5) }, ...o,
+  spine: [90, 90], head: 66, shrug: 1.5, ln: [-90, -90, -90], lf: [-91.5, -91.5, -91.5], at: ['sh', x, 69.9],
+  ik: hands(x - 0.7, 98.3, 1), ...o,
+});
+/** Wall handstand push-up: shoulder position + lean of the body (feet slide on the wall). */
+const hspu = (sx: number, sy: number, tilt: number, head: number): Pose => ({
+  spine: [90 + tilt, 90 + tilt], head, ln: [-90 + tilt, -90 + tilt, -90 + tilt], lf: [-91 + tilt, -91 + tilt, -91 + tilt],
+  at: ['sh', sx, sy], ik: hands(62.2, 98.3, -1),
 });
 
-const FBAR = { t: 'line', x1: 28, y1: 10, x2: 92, y2: 10, w: 3 } as const;
-const fHang = (hx = 18): Pose => ({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 90], lf: [89, 89, 90], at: ['sh', 60, 10 + Math.sqrt(27 * 27 - (hx - 7) * (hx - 7)) - 0.3], ik: { an: [60 + hx, 10, 1], af: [60 - hx, 10, -1] } });
-const fTop = (hx = 18, y = 12): Pose => ({ spine: [-90, -90], w: 7, hw: 4, ln: [93, 85, 90], lf: [87, 95, 90], at: ['sh', 60, y], ik: { an: [60 + hx, 10, 1], af: [60 - hx, 10, -1] } });
+// Low parallettes (rail at y = 90) and the tuck on them.
+const PAR = { t: 'pbar', x: 57, y: 90, w: 20 } as const;
+const onPar = hands(66, 90);
+const tuckPlanche: Pose = {
+  spine: [-32, 20], head: 8, ln: [0, 0, 165], lf: [0, 0, 167], at: ['sh', 75.2, 64.6],
+  ik: { ...onPar, ln: [51.4, 80.8, -1], lf: [50.4, 79.6, -1] },
+};
+
+// L-sit family on parallettes (rail at y = 88).
+const PAR_L = { t: 'pbar', x: 50, y: 88, w: 20 } as const;
+const lsit = (ln: number[], lf: number[], o: Partial<Pose> = {}): Pose => ({
+  spine: [-92, -90], ln, lf, at: ['sh', 58.5, 61.3], ik: hands(59.3, 88), ...o,
+});
+const tuckLegs: [number[], number[]] = [[-50, 100, 40], [-47, 103, 43]];
+
+// Hands and knees.
+const quad = (spine: [number, number], head: number, hx = 59.5, thigh = 90): Pose => ({
+  spine, head, ln: [thigh, 180, 180], lf: [thigh + 1.5, 181, 181], at: ['kN', 36, 96.8], ik: hands(hx),
+});
+
+// Pistol squat: the near leg is the standing leg.
+const pistolTop: Pose = { spine: [-88, -88], an: [0, 0], af: [3, 3], ln: [90, 90, 0], lf: [35, 35, -20], at: ['aN', 56, FOOT] };
+const pistolBottom: Pose = { spine: [-50, -58], an: [0, 0], af: [3, 3], ln: [-17, 125, 0], lf: [-4, -4, -55], at: ['aN', 56, FOOT] };
+
+// Inverted rows: heels down, face up. Body angle a (negative = head higher).
+const row = (ax: number, ay: number, a: number, bar: [number, number], foot: number, bend = -1): Pose => ({
+  spine: [a, a], ln: [a + 180, a + 180, foot], lf: [a + 181, a + 181, foot], at: ['aN', ax, ay],
+  ik: { an: [bar[0], bar[1], bend], af: [bar[0] + 1.5, bar[1], bend] },
+});
+
+// Front views.
+const FBAR = { t: 'line', x1: 26, y1: 10, x2: 94, y2: 10, w: 3 } as const;
+const PULL_VB: [number, number, number, number] = [0, -12, 120, 117];
+const fGrip = (hx: number): Pose['ik'] => ({ an: [60 + hx, 10, 1], af: [60 - hx, 10, -1] });
+const fLegs = { ln: [89, 89, 55], lf: [91, 91, 125] };
+/** Dead hang seen from the front: shoulders shrugged up to the ears. */
+const fHang = (hx = 13): Pose => ({
+  spine: [-90, -90], w: 7, hw: 4, shrug: 2.5, ...fLegs,
+  at: ['sh', 60, 12.2 + Math.sqrt(27 * 27 - (hx - 7) * (hx - 7))], ik: fGrip(hx),
+});
+const fTop = (hx = 13, y = 11.7): Pose => ({ spine: [-90, -90], w: 7, hw: 4, ...fLegs, at: ['sh', 60, y], ik: fGrip(hx) });
+const fStand = (o: Partial<Pose>): Pose => ({ spine: [-90, -90], w: 7, hw: 4.5, ln: [88, 88, 40], lf: [92, 92, 140], at: ['hip', 60, 61.9], ...o });
+const topView = (x: number, y = 41): Pose => ({
+  spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', x, y], ik: { an: [91, 40, 1], af: [29, 40, -1] },
+});
 
 // ---------- guides ----------
 
@@ -100,9 +139,9 @@ export const GUIDES: Guide[] = [
   // ----- handstand -----
   {
     name: 'Chest-to-wall handstand',
-    mark: { joint: 'mid', label: 'buik in, billen aan', dx: -10, dy: 0 },
-    props: [{ t: 'wall', x: 69.5 }],
-    frames: [f(hs(64))],
+    mark: { joint: 'mid', label: 'buik in, billen aan', dx: 14, dy: 0 },
+    props: [{ t: 'wall', x: 54.5, side: -1 }],
+    frames: [f(hs(60, { spine: [88.5, 88.5], ln: [-91.5, -91.5, -91.5], lf: [-93, -93, -93] }))],
     cues: [
       'Handen schouderbreed, 10–15 cm van de muur, en loop met je voeten de muur op.',
       'Duw de vloer actief weg: schouders richting je oren, armen gestrekt.',
@@ -113,12 +152,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Vrije handstand',
-    mark: { joint: 'hN', label: 'druk de vloer weg', dx: 16, dy: -14 },
-    arrow: { joint: 'aF', from: 1, to: 2, bend: -10 },
+    mark: { joint: 'hN', label: 'vingers sturen de balans', dx: -6, dy: -12 },
+    arrow: { joint: 'aF', from: 1, to: 2, bend: -12 },
     frames: [
-      f({ spine: [-90, -90], an: [-92, -92], af: [-90, -90], at: ['hip', 50, 66], ik: { ln: [64, 97, -1], lf: [36, 97, -1] } }, 500, 1100),
-      f({ spine: [62, 70], lf: [-125, -125, -125], at: ['hip', 62, 50], ik: { an: hand(78.5), af: hand(73.5), ln: [60, 97, -1] } }, 0, 800),
-      f(hs(76), 1800, 700),
+      f({ spine: [-84, -84], an: [-86, -86], af: [-84, -84], at: ['hip', 44, 64], ik: { ln: [56, FOOT, -1], lf: [27, 95.5, -1] } }, 700, 0),
+      f({ spine: [27.4, 27.4], head: 20, ln: [0, 0, 60], lf: [205, 205, 205], at: ['hip', 55, 59.5], ik: { ...hands(77.3), ln: [56, 95, -1] } }, 0, 850),
+      f(hs(78), 1900, 750),
     ],
     key: 2,
     cues: [
@@ -131,15 +170,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Wall HSPU (deel-ROM)',
-    mark: { joint: 'head', label: 'hoofd iets vóór je handen', dx: 14, dy: -4 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: 8 },
-    props: [{ t: 'wall', x: 51 }],
-    frames: [
-      f(hs(60, { spine: [88, 88], ln: [-94, -94, -94], lf: [-95, -95, -95], at: ['sh', 60.5, 72.3] }), 400, 1000),
-      f(hs(60, { spine: [80, 82], ln: [-96, -96, -96], lf: [-97, -97, -97], at: ['sh', 63, 81] }), 300, 1300),
-    ],
+    mark: { joint: 'eN', label: 'ellebogen schuin naar achteren', dx: -4, dy: -34 },
+    arrow: { joint: 'head', from: 0, to: 1, bend: -5 },
+    props: [{ t: 'wall', x: 73 }],
+    frames: [f(hspu(63.2, 71.4, 7.5, 76), 400, 1000), f(hspu(58.5, 79, 11.6, 112), 300, 1400)],
     cues: [
-      'Handstand met je rug naar de muur, handen ± 15 cm van de muur.',
+      'Handstand met je rug naar de muur, handen ± een handlengte van de muur.',
       'Zak gecontroleerd tot halverwege: je hoofd gaat iets vóór je handen (driehoek).',
       'Ellebogen schuin naar achteren, niet wijd uit.',
       'Druk jezelf terug tot gestrekte armen.',
@@ -148,16 +184,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Wall HSPU',
-    mark: { joint: 'head', label: 'hoofd iets vóór je handen', dx: 14, dy: -4 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: 8 },
-    props: [{ t: 'wall', x: 51 }],
-    frames: [
-      f(hs(60, { spine: [88, 88], ln: [-94, -94, -94], lf: [-95, -95, -95], at: ['sh', 60.5, 72.3] }), 400, 1000),
-      f(hs(60, { spine: [78, 80], ln: [-97, -97, -97], lf: [-98, -98, -98], at: ['sh', 64, 86] }), 250, 1700),
-    ],
+    mark: { joint: 'head', label: 'hoofd vóór je handen', dx: -6, dy: -22 },
+    arrow: { joint: 'head', from: 0, to: 1, bend: -6 },
+    props: [{ t: 'wall', x: 73 }],
+    frames: [f(hspu(63.2, 71.4, 7.5, 76), 400, 1000), f(hspu(53, 87, 16.5, 130), 250, 1700)],
     cues: [
-      'Handstand met je rug naar de muur, handen ± 15 cm van de muur.',
-      'Zak tot je hoofd licht de grond raakt, iets vóór je handen.',
+      'Handstand met je rug naar de muur, handen ± een handlengte van de muur.',
+      'Zak tot je hoofd licht de grond raakt, een stuk vóór je handen (driehoek).',
       'Ellebogen schuin naar achteren, lichaam blijft strak.',
       'Druk door tot gestrekte armen, schouders naar je oren.',
     ],
@@ -167,11 +200,12 @@ export const GUIDES: Guide[] = [
   // ----- balance / planche -----
   {
     name: 'Elbow lever',
-    mark: { joint: 'eN', label: 'ellebogen tegen je heupen', dx: 0, dy: -26 },
+    mark: { joint: 'eN', label: 'ellebogen in je buik', dx: 2, dy: -30 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: -8 },
+    fingers: -1,
     frames: [
-      f({ spine: [-10, -8], head: -15, an: [168, 90], af: [170, 90], ln: [157, 157, 180], lf: [159, 159, 180], at: ['hN', 62, 99] }, 700, 1000),
-      f({ spine: [0, -2], head: -8, an: [170, 90], af: [172, 90], ln: [180, 180, 180], lf: [181, 181, 181], at: ['hN', 62, 99] }, 2200, 1300),
+      f({ spine: [-3, -6], head: -14, ln: [162, 162, 95], lf: [163.5, 163.5, 97], at: ['hip', 46.5, 82], ik: hands(56, 98.3, 1) }, 700, 1000),
+      f({ spine: [-2, -4], head: -12, ln: [182, 182, 182], lf: [183.5, 183.5, 183.5], at: ['hip', 48, 82], ik: hands(56, 98.3, 1) }, 2200, 1300),
     ],
     key: 1,
     cues: [
@@ -184,11 +218,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Crow pose',
-    mark: { joint: 'kN', label: 'knieën op je bovenarmen', dx: -6, dy: -30 },
+    mark: { joint: 'kN', label: 'knieën op je bovenarmen', dx: -8, dy: -30 },
     arrow: { joint: 'sh', from: 0, to: 1, bend: -6 },
     frames: [
-      f({ spine: [-40, -10], head: 10, ln: [0, 0], lf: [0, 0], at: ['hip', 50, 86], ik: { an: hand(68), af: hand(69.5), ln: [54, 97, -1], lf: [55.5, 97, -1] } }, 600, 1000),
-      f({ spine: [12, 38], head: 15, ln: [36, -138], lf: [38, -134], at: ['hip', 55, 70], ik: { an: hand(73), af: hand(74.5) } }, 2000, 1100),
+      f({ spine: [-57, -1], head: -10, ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 44, 84], ik: { ...hands(68), ln: [50, FOOT, -1], lf: [51.5, FOOT, -1] } }, 600, 1000),
+      f({ spine: [-8, 31], head: 4, ln: [0, 0, 172], lf: [0, 0, 174], at: ['hip', 50, 72], ik: { ...hands(68), ln: [47, 87, -1], lf: [46, 85.6, -1] } }, 2000, 1100),
     ],
     key: 1,
     cues: [
@@ -201,7 +235,7 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Planche lean',
-    mark: { joint: 'sh', label: 'schouders vóór je handen', dx: -3, dy: -24 },
+    mark: { joint: 'sh', label: 'schouders vóór je handen', dx: -4, dy: -24 },
     arrow: { joint: 'sh', from: 0, to: 1, bend: -9 },
     frames: [f(pushTop, 500, 1000), f(lean, 2000, 1200)],
     key: 1,
@@ -211,16 +245,16 @@ export const GUIDES: Guide[] = [
       'Duw de grond weg: schouders naar voren en omlaag, bovenrug licht rond.',
       'Billen en buik aan, lichaam recht.',
     ],
-    tip: 'Vingers mogen naar opzij of achteren wijzen; dat spaart je polsen. Warm je polsen eerst op.',
+    tip: 'Op parallettes blijven je polsen recht: prettiger als je onderarmen snel vol lopen. Warm je polsen altijd eerst op.',
   },
   {
     name: 'Tuck planche',
-    mark: { joint: 'eN', label: 'armen op slot', dx: -16, dy: -18 },
+    mark: { joint: 'eN', label: 'armen op slot', dx: 16, dy: 8 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: 6 },
     props: [PAR],
     frames: [
-      f({ spine: [-30, -5], head: 20, ln: [0, 0], lf: [0, 0], at: ['hip', 48, 80], ik: { an: [64, 92, 1], af: [65.5, 92, 1], ln: [56, 97, -1], lf: [57.5, 97, -1] } }, 500, 1000),
-      f({ spine: [-25, 25], head: 30, ln: [40, -145, 180], lf: [42, -143, 180], at: ['sh', 72, 67], ik: { an: [64, 92, 1], af: [65.5, 92, 1] } }, 1800, 1000),
+      f({ spine: [-43, 0], head: 8, ln: [0, 0, 0], lf: [0, 0, 0], at: ['sh', 68.5, 63.1], ik: { ...onPar, ln: [54, FOOT, -1], lf: [55.5, FOOT, -1] } }, 500, 1000),
+      f(tuckPlanche, 1800, 1000),
     ],
     key: 1,
     cues: [
@@ -233,12 +267,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Advanced tuck planche',
-    mark: { joint: 'mid', label: 'rug plat', dx: 0, dy: -18 },
-    arrow: { joint: 'kN', from: 0, to: 1, bend: 6 },
+    mark: { joint: 'mid', label: 'rug plat', dx: -4, dy: -18 },
+    arrow: { joint: 'aN', from: 0, to: 1, bend: 8 },
     props: [PAR],
     frames: [
-      f({ spine: [-25, 25], head: 30, ln: [40, -145, 180], lf: [42, -143, 180], at: ['sh', 72, 67], ik: { an: [64, 92, 1], af: [65.5, 92, 1] } }, 900, 1000),
-      f({ spine: [3, 3], head: 20, ln: [90, 180, 180], lf: [92, 182, 182], at: ['sh', 73, 67], ik: { an: [64, 92, 1], af: [65.5, 92, 1] } }, 1800, 1200),
+      f(tuckPlanche, 900, 1000),
+      f({ spine: [-1.5, -1.5], head: 8, ln: [0, 0, 178], lf: [0, 0, 180], at: ['sh', 76.5, 65], ik: { ...onPar, ln: [35.8, 85.4, -1], lf: [34.8, 84, -1] } }, 1800, 1200),
     ],
     key: 1,
     cues: [
@@ -251,10 +285,10 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pike to planche lean',
-    mark: { joint: 'sh', label: 'schouders naar voren', dx: 0, dy: -20 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: -8 },
+    mark: { joint: 'sh', label: 'schouders naar voren', dx: 4, dy: -22 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 8 },
     frames: [
-      f({ spine: [38, 42], ln: [112, 112, 90], lf: [113, 113, 92], at: ['aN', 22, 95], ik: { an: hand(65.5), af: hand(67) } }, 500, 1100),
+      f({ spine: [22, 22], ln: [121, 121, 85], lf: [122, 122, 87], at: ['aN', 17.4, TOE], ik: hands(66) }, 500, 1100),
       f(lean, 900, 1200),
     ],
     cues: [
@@ -269,13 +303,12 @@ export const GUIDES: Guide[] = [
   // ----- push -----
   {
     name: 'Weighted dips',
-    mark: { joint: 'eN', label: 'ellebogen naar achteren', dx: -18, dy: -16 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: -12 },
-    floor: false,
-    props: [{ t: 'line', x1: 40, y1: 55.5, x2: 84, y2: 55.5, w: 3 }, { t: 'line', x1: 80, y1: 55.5, x2: 80, y2: 104, w: 2 }, { t: 'weight' }],
+    mark: { joint: 'eN', label: 'ellebogen naar achteren', dx: -12, dy: -22 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: -8 },
+    props: [{ t: 'pbar', x: 40, y: 56, w: 44 }, { t: 'weight' }],
     frames: [
-      f({ spine: [-80, -82], ln: [96, 150], lf: [98, 152], at: ['sh', 63, 28.7], ik: { an: [60, 55, 1], af: [61.5, 55, 1] } }, 400, 1000),
-      f({ spine: [-70, -74], ln: [100, 155], lf: [102, 157], at: ['sh', 67, 41], ik: { an: [60, 55, 1], af: [61.5, 55, 1] } }, 300, 1300),
+      f({ spine: [-84, -84], ln: [100, 165, 150], lf: [103, 168, 153], at: ['sh', 60.5, 29.2], ik: hands(60, 56) }, 400, 1000),
+      f({ spine: [-68, -68], ln: [108, 172, 157], lf: [111, 175, 160], at: ['sh', 69.9, 45.5], ik: hands(60, 56) }, 300, 1400),
     ],
     cues: [
       'Start bovenin met gestrekte armen, schouders laag (weg van je oren).',
@@ -292,12 +325,7 @@ export const GUIDES: Guide[] = [
     view: 'top',
     floor: false,
     props: [{ t: 'mat', x: 22, y: 26, w: 76, h: 80 }],
-    frames: [
-      f({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 40], ik: { an: [90, 40, 1], af: [30, 40, -1] } }, 400, 900),
-      f({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 53, 41], ik: { an: [90, 40, 1], af: [30, 40, -1] } }, 600, 1100),
-      f({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 40], ik: { an: [90, 40, 1], af: [30, 40, -1] } }, 400, 1100),
-      f({ spine: [-90, -90], w: 7, hw: 4, ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 67, 41], ik: { an: [90, 40, 1], af: [30, 40, -1] } }, 600, 1100),
-    ],
+    frames: [f(topView(60, 40), 400, 900), f(topView(52), 600, 1100), f(topView(60, 40), 400, 1100), f(topView(68), 600, 1100)],
     key: 1,
     cues: [
       'Handen heel breed, vingers schuin naar buiten.',
@@ -305,16 +333,13 @@ export const GUIDES: Guide[] = [
       'Lichaam strak als bij een gewone push-up.',
       'Duw terug naar het midden en wissel van kant.',
     ],
-    tip: 'Te zwaar? Leg de gestrekte hand op een verhoging, of begin met minder diepte.',
+    tip: 'Te zwaar? Leg de gestrekte hand op je stepper, of begin met minder diepte.',
   },
   {
     name: 'Pseudo planche push-ups',
-    mark: { joint: 'eN', label: 'ellebogen langs je lichaam', dx: -4, dy: -24 },
+    mark: { joint: 'eN', label: 'ellebogen langs je lichaam', dx: -6, dy: -26 },
     arrow: { joint: 'sh', from: 0, to: 1, bend: -6 },
-    frames: [
-      f(lean, 300, 1000),
-      f({ spine: [-8, -6], ln: [172, 172, 92], lf: [172, 172, 94], at: ['aN', 17, 95], ik: { an: hand(65.5), af: hand(67) } }, 300, 1300),
-    ],
+    frames: [f(lean, 300, 1000), f(plank(17.4, -3.4, { spine: [-4.4, -2.4] }), 300, 1400)],
     cues: [
       'Handen bij je heupen, vingers naar opzij of achteren.',
       'Leun naar voren tot je schouders ver voor je handen zijn.',
@@ -325,29 +350,46 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pike push-ups voeten verhoogd',
-    mark: { joint: 'head', label: 'hoofd vóór je handen', dx: 14, dy: -6 },
+    mark: { joint: 'head', label: 'hoofd vóór je handen', dx: 4, dy: -30 },
     arrow: { joint: 'head', from: 0, to: 1, bend: -6 },
-    props: [{ t: 'box', x: 6, y: 78, w: 28, h: 22 }],
+    props: [{ t: 'stepper', x: 8, y: 92, w: 34, label: 'stepper' }],
     frames: [
-      f({ spine: [78, 80], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 45, 47], ik: { ln: [24, 75, 1], lf: [25.5, 75, 1], an: hand(58), af: hand(59.5) } }, 300, 1000),
-      f({ spine: [86, 92], head: 45, ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 54.5, 60], ik: { ln: [24, 75, 1], lf: [25.5, 75, 1], an: hand(58), af: hand(59.5) } }, 300, 1300),
+      f({ spine: [45.6, 45.6], head: 50, ln: [116.4, 116.4, 85], lf: [117.4, 117.4, 87], at: ['aN', 28, 85.2], ik: hands(66) }, 300, 1000),
+      f({ spine: [51.4, 51.4], head: 45, ln: [147.2, 147.2, 85], lf: [148.2, 148.2, 87], at: ['aN', 28, 85.2], ik: hands(66) }, 300, 1400),
     ],
     cues: [
-      'Voeten op een verhoging, heupen hoog boven je handen.',
-      'Zak met je hoofd naar een punt iets vóór je handen (driehoek).',
-      'Ellebogen schuin naar achteren.',
+      'Tenen op je stepper, handen op de grond, heupen hoog boven je handen.',
+      'Zak met je hoofd naar een punt vóór je handen (driehoek).',
+      'Ellebogen schuin naar achteren, niet wijd uit.',
+      'Duw terug tot gestrekte armen en duw je schouders naar je oren.',
+    ],
+    tip: 'Hoe hoger je voeten, hoe meer gewicht op je schouders. Na de stepper is je grote box de volgende stap.',
+  },
+  {
+    name: 'Pike push-ups voeten op box',
+    mark: { joint: 'hip', label: 'heupen boven je handen', dx: 10, dy: -14 },
+    arrow: { joint: 'head', from: 0, to: 1, bend: -6 },
+    props: [{ t: 'box', x: 4, y: 78, w: 34, h: 22, label: 'box' }],
+    frames: [
+      f({ spine: [69, 69], head: 62, ln: [137.8, 137.8, 85], lf: [138.8, 138.8, 87], at: ['aN', 29.35, 71.2], ik: hands(66) }, 300, 1000),
+      f({ spine: [66.7, 66.7], head: 45, ln: [165.4, 165.4, 85], lf: [166.4, 166.4, 87], at: ['aN', 29.35, 71.2], ik: hands(66) }, 300, 1500),
+    ],
+    cues: [
+      'Tenen op de box (± heuphoogte), loop je handen terug tot je romp bijna verticaal is.',
+      'Zak met je hoofd naar een punt vóór je handen (driehoek).',
+      'Ellebogen schuin naar achteren, benen gestrekt.',
       'Duw terug tot gestrekte armen.',
     ],
-    tip: 'Hoe hoger je voeten en hoe verticaler je romp, hoe dichter bij een handstand push-up.',
+    tip: 'Dit is de laatste stap vóór de wall HSPU: hoe verticaler je romp, hoe dichter je erbij zit.',
   },
   {
     name: 'Bodyweight skull crusher',
-    mark: { joint: 'eN', label: 'ellebogen wijzen naar voren', dx: 10, dy: -26 },
+    mark: { joint: 'eN', label: 'ellebogen wijzen naar voren', dx: -2, dy: -22 },
     arrow: { joint: 'head', from: 0, to: 1, bend: 6 },
-    props: [{ t: 'box', x: 80, y: 81, w: 26, h: 19 }],
+    props: [{ t: 'bench', x: 81, y: 77, w: 34 }],
     frames: [
-      f({ spine: [-30, -30], ln: [150, 150, 90], lf: [150, 150, 92], at: ['aN', 10, 95], ik: { an: [84, 81, 1], af: [85.5, 81, 1] } }, 300, 1000),
-      f({ spine: [-18, -18], ln: [162, 162, 92], lf: [162, 162, 94], at: ['aN', 10, 95], ik: { an: [84, 81, 1], af: [85.5, 81, 1] } }, 300, 1300),
+      f({ ...plank(12, -33.4), ik: hands(84, 76, -1) }, 300, 1000),
+      f({ ...plank(12, -18, { head: -5 }), ik: hands(84, 76, -1) }, 300, 1400),
     ],
     cues: [
       'Handen op een bank of stang, lichaam strak in een schuine plank.',
@@ -361,12 +403,12 @@ export const GUIDES: Guide[] = [
   // ----- gym -----
   {
     name: 'Incline bench press',
-    mark: { joint: 'hN', label: 'naar je bovenborst', dx: 14, dy: 2 },
+    mark: { joint: 'hN', label: 'naar je bovenborst', dx: 16, dy: 2 },
     arrow: { joint: 'hN', from: 0, to: 1, bend: 6 },
-    props: [{ t: 'line', x1: 34, y1: 88, x2: 52, y2: 60, w: 5 }, { t: 'line', x1: 34, y1: 88, x2: 34, y2: 100, w: 3 }, { t: 'plate' }],
+    props: [{ t: 'line', x1: 58, y1: 86, x2: 30, y2: 52.6, w: 4.5 }, { t: 'line', x1: 44, y1: 86, x2: 64, y2: 86, w: 4.5 }, { t: 'line', x1: 50, y1: 88, x2: 50, y2: 100, w: 2 }, { t: 'plate' }],
     frames: [
-      f({ spine: [-56, -56], ln: [0, 90], lf: [2, 92], at: ['hip', 42, 81], ik: { an: [66, 61, 1], af: [67, 61, 1] } }, 300, 1300),
-      f({ spine: [-56, -56], ln: [0, 90], lf: [2, 92], at: ['hip', 42, 81], ik: { an: [62, 31, 1], af: [63, 31, 1] } }, 400, 1000),
+      f({ spine: [-130, -130], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 52, 80], ik: { an: [45, 59.5, 1], af: [46, 59.5, 1], ln: [71, FOOT, -1], lf: [72.5, FOOT, -1] } }, 300, 1400),
+      f({ spine: [-130, -130], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 52, 80], ik: { an: [38.5, 33.3, 1], af: [39.5, 33.3, 1], ln: [71, FOOT, -1], lf: [72.5, FOOT, -1] } }, 400, 1000),
     ],
     cues: [
       'Bank op ± 30–45°, voeten stevig op de grond.',
@@ -377,13 +419,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'DB shoulder press',
-    mark: { joint: 'hN', label: 'recht omhoog', dx: 10, dy: -2 },
+    mark: { joint: 'hN', label: 'recht omhoog', dx: 10, dy: 12 },
     arrow: { joint: 'hN', from: 0, to: 1, bend: 8 },
     view: 'front',
     props: [{ t: 'dumbbells' }],
     frames: [
-      f({ spine: [-90, -90], w: 7, hw: 4, at: ['hip', 60, 64], ik: { ln: [64.5, 98.5, 1], lf: [55.5, 98.5, -1], an: [81, 23, 1], af: [39, 23, -1] } }, 300, 1200),
-      f({ spine: [-90, -90], w: 7, hw: 4, at: ['hip', 60, 64], ik: { ln: [64.5, 98.5, 1], lf: [55.5, 98.5, -1], an: [70, 10, 1], af: [50, 10, -1] } }, 300, 900),
+      f(fStand({ ik: { an: [75, 33, 1], af: [45, 33, -1] } }), 300, 1300),
+      f(fStand({ ik: { an: [68.5, 9.5, 1], af: [51.5, 9.5, -1] } }), 300, 900),
     ],
     cues: [
       'Dumbbells op schouderhoogte, ellebogen iets naar voren.',
@@ -394,13 +436,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Shoulder press',
-    mark: { joint: 'hN', label: 'recht omhoog', dx: 10, dy: -2 },
+    mark: { joint: 'hN', label: 'recht omhoog', dx: 10, dy: 12 },
     arrow: { joint: 'hN', from: 0, to: 1, bend: 8 },
     view: 'front',
     props: [{ t: 'barbell' }],
     frames: [
-      f({ spine: [-90, -90], w: 7, hw: 4, at: ['hip', 60, 64], ik: { ln: [64.5, 98.5, 1], lf: [55.5, 98.5, -1], an: [82, 25, 1], af: [38, 25, -1] } }, 300, 1200),
-      f({ spine: [-90, -90], w: 7, hw: 4, at: ['hip', 60, 64], ik: { ln: [64.5, 98.5, 1], lf: [55.5, 98.5, -1], an: [70, 10, 1], af: [50, 10, -1] } }, 300, 900),
+      f(fStand({ ik: { an: [73, 32, 1], af: [47, 32, -1] } }), 300, 1300),
+      f(fStand({ ik: { an: [70, 9.6, 1], af: [50, 9.6, -1] } }), 300, 900),
     ],
     cues: [
       'Stang of handvatten op schouderhoogte, polsen recht.',
@@ -413,12 +455,12 @@ export const GUIDES: Guide[] = [
   // ----- core -----
   {
     name: 'Tuck L-sit',
-    mark: { joint: 'sh', label: 'schouders omlaag', dx: 12, dy: -8 },
-    arrow: { joint: 'kN', from: 0, to: 1, bend: -6 },
+    mark: { joint: 'sh', label: 'schouders omlaag', dx: -12, dy: -16 },
+    arrow: { joint: 'aN', from: 0, to: 1, bend: 6 },
     props: [PAR_L],
     frames: [
-      f({ ...lsit([0, 0], [0, 0]), ik: { an: [60, 86, 1], af: [61.5, 86, 1], ln: [74, 97, -1], lf: [75.5, 97, -1] } }, 500, 900),
-      f(lsit([-50, 100], [-48, 102]), 1800, 900),
+      f(lsit([0, 0, 0], [0, 0, 0], { shrug: 2.5, at: ['sh', 58.5, 63.8], ik: { ...hands(59.3, 88), ln: [73, FOOT, -1], lf: [74.5, FOOT, -1] } }), 500, 900),
+      f(lsit([0, 0, 40], [0, 0, 43], { ik: { ...hands(59.3, 88), ln: [68, 91, -1], lf: [69.5, 91, -1] } }), 1800, 900),
     ],
     key: 1,
     cues: [
@@ -431,10 +473,10 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'One-leg L-sit',
-    mark: { joint: 'aN', label: 'been gestrekt', dx: 0, dy: -14 },
+    mark: { joint: 'aN', label: 'been gestrekt', dx: -4, dy: -16 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: -8 },
     props: [PAR_L],
-    frames: [f(lsit([-50, 100], [-48, 102]), 600, 900), f(lsit([-2, -2, -2], [-48, 102]), 1800, 900)],
+    frames: [f(lsit(...tuckLegs), 600, 900), f(lsit([-2, -2, -2], tuckLegs[1]), 1800, 900)],
     key: 1,
     cues: [
       'Vanuit tuck L-sit: strek één been helemaal, tenen wijzen.',
@@ -445,10 +487,10 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'L-sit',
-    mark: { joint: 'aN', label: 'benen horizontaal', dx: -6, dy: -16 },
+    mark: { joint: 'kN', label: 'benen horizontaal', dx: 4, dy: -16 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: -8 },
     props: [PAR_L],
-    frames: [f(lsit([-50, 100], [-48, 102]), 600, 900), f(lsit([-3, -3, -3], [-1, -1, -1], [-94, -92]), 1800, 900)],
+    frames: [f(lsit(...tuckLegs), 600, 900), f(lsit([-3, -3, -3], [-1, -1, -1]), 1800, 900)],
     key: 1,
     cues: [
       'Handen naast je heupen, armen gestrekt, schouders omlaag.',
@@ -460,11 +502,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Compact leg lifts',
-    mark: { joint: 'aN', label: 'hielen los', dx: 10, dy: -22 },
+    mark: { joint: 'aN', label: 'hielen los', dx: 6, dy: -22 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: -6 },
     frames: [
-      f({ spine: [-62, -60], ln: [0, 0, -40], lf: [1, 1, -40], at: ['hip', 40, 95], ik: { an: hand(58), af: hand(59.5) } }, 400, 900),
-      f({ spine: [-55, -52], ln: [-14, -14, -40], lf: [-13, -13, -40], at: ['hip', 40, 95], ik: { an: hand(58), af: hand(59.5) } }, 800, 700),
+      f({ spine: [-62, -52], ln: [0, 0, -75], lf: [1, 1, -75], at: ['hip', 34, 94.8], ik: hands(54) }, 400, 900),
+      f({ spine: [-60, -50], ln: [-14, -14, -89], lf: [-13, -13, -88], at: ['hip', 34, 94.8], ik: hands(54) }, 800, 700),
     ],
     cues: [
       'Zit rechtop, benen gestrekt, handen naast je knieën.',
@@ -476,12 +518,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Dragon flag negatives',
-    mark: { joint: 'hip', label: 'niet knikken in je heupen', dx: 10, dy: -14 },
+    mark: { joint: 'hip', label: 'niet knikken in je heupen', dx: 12, dy: -12 },
     arrow: { joint: 'aN', from: 0, to: 1, bend: -18 },
-    props: [{ t: 'box', x: 12, y: 78, w: 64, h: 5 }, { t: 'line', x1: 18, y1: 83, x2: 18, y2: 100 }, { t: 'line', x1: 70, y1: 83, x2: 70, y2: 100 }],
+    props: [{ t: 'bench', x: 10, y: 80, w: 88 }],
     frames: [
-      f({ spine: [90, 90], head: 180, ln: [-90, -90, -90], lf: [-92, -92, -92], at: ['sh', 28, 74], ik: { an: [16, 77, 1], af: [17, 77, 1] } }, 500, 1000),
-      f({ spine: [172, 174], head: 180, ln: [-8, -8, -8], lf: [-7, -7, -7], at: ['sh', 28, 74], ik: { an: [16, 77, 1], af: [17, 77, 1] } }, 300, 3500),
+      f({ spine: [90, 90], head: 180, ln: [-90, -90, -90], lf: [-91.5, -91.5, -91.5], at: ['sh', 30, 75.7], ik: hands(16, 78, 1) }, 500, 1000),
+      f({ spine: [170, 170], head: 180, ln: [-10, -10, -10], lf: [-11.5, -11.5, -11.5], at: ['sh', 30, 75.7], ik: hands(16, 78, 1) }, 300, 3600),
     ],
     cues: [
       'Lig op een bank en houd hem achter je hoofd vast.',
@@ -493,8 +535,8 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Hollow body hold',
-    mark: { joint: 'mid', label: 'onderrug plat', dx: 0, dy: -16 },
-    frames: [f({ spine: [-170, -162], an: [-166, -166], af: [-164, -164], ln: [-12, -12, -12], lf: [-11, -11, -11], at: ['hip', 62, 96] })],
+    mark: { joint: 'hip', label: 'onderrug plat op de grond', dx: 4, dy: -22 },
+    frames: [f({ spine: [-178, -160], head: -152, an: [-158, -158], af: [-156, -156], ln: [-14, -14, -14], lf: [-12.5, -12.5, -12.5], at: ['hip', 58, 95] })],
     cues: [
       'Lig op je rug, onderrug plat tegen de vloer.',
       'Til schouders en benen een stukje van de grond.',
@@ -505,9 +547,9 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Side plank',
-    mark: { joint: 'hip', label: 'heup omhoog', dx: -4, dy: -18 },
+    mark: { joint: 'hip', label: 'heup omhoog', dx: -6, dy: -18 },
     view: 'front',
-    frames: [f({ spine: [-24, -24], w: 6, hw: 2.5, an: [90, 90], af: [-90, -90], ln: [156, 156, 180], lf: [154, 154, 180], at: ['hN', 82, 99] })],
+    frames: [f({ spine: [-28, -28], w: 5.5, hw: 3.5, an: [90, 90], af: [-90, -90], ln: [153.5, 153.5, 100], lf: [153.5, 153.5, 100], at: ['hN', 84, 98] })],
     cues: [
       'Steun op je hand of onderarm, recht onder je schouder.',
       'Voeten op elkaar, lichaam in één rechte lijn.',
@@ -519,11 +561,13 @@ export const GUIDES: Guide[] = [
   // ----- pull -----
   {
     name: 'Scapular pull-ups',
-    mark: { joint: 'sh', label: 'schouders omlaag', dx: 18, dy: 4 },
+    mark: { joint: 'shN', label: 'schouders omlaag', dx: 22, dy: 4 },
+    arrow: { joint: 'head', from: 0, to: 1, bend: 0 },
+    view: 'front',
     floor: false,
-    vb: [0, -10, 120, 115],
-    props: [BAR],
-    frames: [f(hang({ neck: 0 }), 500, 700), f(hang({ neck: 4.5, spine: [-93, -97] }), 700, 700)],
+    vb: PULL_VB,
+    props: [FBAR],
+    frames: [f(fHang(), 600, 800), f({ ...fHang(), shrug: -1.5, at: ['sh', 60, 33.6] }, 800, 700)],
     cues: [
       'Hang met gestrekte armen aan de stang.',
       'Trek je schouders omlaag en iets naar achteren, zonder je armen te buigen.',
@@ -533,13 +577,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pull-ups',
-    mark: { joint: 'head', label: 'kin over de stang', dx: 21, dy: -5 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: 22 },
+    mark: { joint: 'head', label: 'kin over de stang', dx: 22, dy: -4 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 0 },
     view: 'front',
     floor: false,
-    vb: [0, -16, 120, 121],
+    vb: PULL_VB,
     props: [FBAR],
-    frames: [f(fHang(), 600, 1200), f(fTop(), 400, 800)],
+    frames: [f(fHang(), 600, 1300), f(fTop(), 400, 850)],
     cues: [
       'Handen iets breder dan schouders, start in een volle hang.',
       'Trek eerst je schouders omlaag, dan je ellebogen naar je heupen.',
@@ -550,11 +594,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pull-up negatives',
-    mark: { joint: 'head', label: '± 5 sec zakken', dx: 21, dy: -5 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: 22 },
+    mark: { joint: 'head', label: '± 5 sec zakken', dx: 22, dy: -4 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 0 },
     view: 'front',
     floor: false,
-    vb: [0, -16, 120, 121],
+    vb: PULL_VB,
     props: [FBAR],
     frames: [f(fTop(), 700, 900), f(fHang(), 400, 5000)],
     cues: [
@@ -566,13 +610,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Explosive pull-ups',
-    mark: { joint: 'sh', label: 'borst naar de stang', dx: 22, dy: 0 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: 22 },
+    mark: { joint: 'sh', label: 'borst naar de stang', dx: 24, dy: 6 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 0 },
     view: 'front',
     floor: false,
-    vb: [0, -16, 120, 121],
+    vb: PULL_VB,
     props: [FBAR],
-    frames: [f(fHang(), 700, 1000), f(fTop(18, 5), 300, 450)],
+    frames: [f(fHang(), 700, 1100), f(fTop(13, 7), 250, 420)],
     cues: [
       'Start in een volle hang, schouders actief.',
       'Trek zo snel en hoog mogelijk: borst naar de stang.',
@@ -583,13 +627,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Hammer grip pull-ups',
-    mark: { joint: 'hN', label: 'handpalmen naar elkaar', dx: 14, dy: -6 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: 20 },
+    mark: { joint: 'hN', label: 'handpalmen naar elkaar', dx: 14, dy: -8 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 0 },
     view: 'front',
     floor: false,
-    vb: [0, -16, 120, 121],
-    props: [FBAR],
-    frames: [f(fHang(9), 600, 1200), f(fTop(9), 400, 800)],
+    vb: PULL_VB,
+    props: [{ t: 'line', x1: 68, y1: 6, x2: 68, y2: 14, w: 3 }, { t: 'line', x1: 52, y1: 6, x2: 52, y2: 14, w: 3 }, { t: 'line', x1: 40, y1: 4, x2: 80, y2: 4, w: 2 }],
+    frames: [f(fHang(8), 600, 1300), f(fTop(8, 9), 400, 850)],
     cues: [
       'Handpalmen naar elkaar toe (parallelle handvatten).',
       'Trek je ellebogen langs je lichaam omlaag.',
@@ -600,12 +644,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Advanced tuck front lever',
-    mark: { joint: 'mid', label: 'rug plat en horizontaal', dx: 4, dy: 16 },
-    arrow: { joint: 'kN', from: 0, to: 1, bend: 12 },
+    mark: { joint: 'mid', label: 'rug plat en horizontaal', dx: 0, dy: 18 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 14 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
-    frames: [f(leverHang, 500, 1200), f(lever([-90, 0, 0], [-88, 2, 2]), 2400, 1300)],
+    frames: [f(leverHang, 500, 1200), f(lever(-60, [-90, 0, 0], [-88, 2, 2]), 2400, 1300)],
     key: 1,
     cues: [
       'Armen gestrekt, trek je schouders omlaag (naar je heupen).',
@@ -617,12 +661,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'One-leg front lever',
-    mark: { joint: 'aN', label: 'been in lijn met je romp', dx: -6, dy: 14 },
-    arrow: { joint: 'aN', from: 0, to: 1, bend: 12 },
+    mark: { joint: 'kN', label: 'been in lijn met je romp', dx: 6, dy: 18 },
+    arrow: { joint: 'aN', from: 0, to: 1, bend: 14 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
-    frames: [f(leverHang, 500, 1200), f(lever([0, 0, 0], [-88, 2, 2]), 2400, 1300)],
+    frames: [f(leverHang, 500, 1200), f(lever(-54, [0, 0, 0], [-112, 25, 25]), 2400, 1300)],
     key: 1,
     cues: [
       'Als de advanced tuck, maar één been gestrekt.',
@@ -633,12 +677,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Straddle front lever',
-    mark: { joint: 'aN', label: 'benen wijd gespreid', dx: -6, dy: 14 },
-    arrow: { joint: 'aN', from: 0, to: 1, bend: 12 },
+    mark: { joint: 'kN', label: 'benen wijd gespreid', dx: 6, dy: 18 },
+    arrow: { joint: 'aN', from: 0, to: 1, bend: 14 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
-    frames: [f(leverHang, 500, 1200), f(lever([0, 0, 0], [4, 4, 4]), 2400, 1300)],
+    frames: [f(leverHang, 500, 1200), f(lever(-50, [5, 5, 5], [-7, -7, -7]), 2400, 1300)],
     key: 1,
     cues: [
       'Benen gestrekt en wijd gespreid (straddle).',
@@ -649,43 +693,58 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Bodyweight rows',
-    mark: { joint: 'mid', label: 'lichaam strak als een plank', dx: 0, dy: -18 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: -8 },
-    props: [{ t: 'bar', x: 70, y: 60 }],
-    frames: [f(row(-8, -98), 400, 1000), f(row(-33, -123), 400, 900)],
+    mark: { joint: 'hip', label: 'lichaam strak als een plank', dx: -4, dy: -24 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 8 },
+    face: -1,
+    props: [{ t: 'bar', x: 60, y: 66, post: true }],
+    frames: [f(row(10, 97.6, -6.8, [60, 66], -80), 400, 1100), f(row(10, 97.6, -24.5, [60, 66], -98), 500, 900)],
     cues: [
       'Lage stang, hielen op de grond, lichaam strak als een plank.',
       'Trek je borst naar de stang, ellebogen langs je lichaam.',
       'Knijp bovenin je schouderbladen samen.',
       'Gecontroleerd terug tot gestrekte armen.',
     ],
-    tip: 'Wordt het makkelijk? Leg je voeten op een verhoging.',
+    tip: 'Wordt het makkelijk? Leg je hielen op je box.',
   },
   {
     name: 'Bodyweight rows voeten verhoogd',
-    mark: { joint: 'mid', label: 'lichaam horizontaal en strak', dx: 0, dy: -18 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: -8 },
-    props: [{ t: 'bar', x: 74, y: 62 }, { t: 'box', x: 0, y: 82, w: 24, h: 18 }],
-    frames: [
-      f({ ...row(8.5, -81), ln: [188.5, 188.5, -81], lf: [189.5, 189.5, -81], at: ['aN', 12, 80], ik: { an: [74, 62, 1], af: [75.5, 62, 1] } }, 400, 1000),
-      f({ ...row(-11, -101), ln: [169, 169, -101], lf: [170, 170, -101], at: ['aN', 12, 80], ik: { an: [74, 62, 1], af: [75.5, 62, 1] } }, 400, 900),
-    ],
+    mark: { joint: 'hip', label: 'heupen hoog, lichaam strak', dx: 0, dy: -24 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 8 },
+    face: -1,
+    props: [{ t: 'box', x: 0, y: 87, w: 24, h: 13, label: '30 cm' }, { t: 'bar', x: 68, y: 66, post: true }],
+    frames: [f(row(12, 84.7, 7.1, [68, 66], -70), 400, 1100), f(row(12, 84.7, -10.5, [68, 66], -88), 600, 900)],
     cues: [
-      'Voeten op een verhoging, lichaam horizontaal en strak.',
-      'Trek je borst naar de stang.',
-      'Schouderbladen samen, ellebogen langs je lichaam.',
-      'Gecontroleerd terug.',
+      'Hielen op je box (± 30 cm), stang zo laag dat je onderin net vrij van de grond hangt.',
+      'Trek je borst naar de stang, ellebogen langs je lichaam.',
+      'Knijp bovenin je schouderbladen 1 tel samen.',
+      'Gecontroleerd terug tot gestrekte armen; heupen zakken niet door.',
     ],
+    tip: 'Hoger dan ± 30 cm hoeft niet. Zwaarder maak je hem met de stang lager, 3 sec zakken, 2 sec vasthouden of extra gewicht.',
+  },
+  {
+    name: 'Archer rows',
+    mark: { joint: 'head', label: 'trek naar één hand', dx: 0, dy: -14 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: -6 },
+    view: 'top',
+    floor: false,
+    props: [{ t: 'line', x1: 20, y1: 40, x2: 100, y2: 40, w: 2.6 }],
+    frames: [f(topView(60, 40), 400, 900), f(topView(52), 700, 1100), f(topView(60, 40), 400, 1100), f(topView(68), 700, 1100)],
+    key: 1,
+    cues: [
+      'Zelfde opstelling als je rows met voeten op de box, maar pak de stang heel breed.',
+      'Trek je borst naar één hand: die arm buigt, de andere blijft gestrekt.',
+      'Lichaam strak, heupen draaien niet mee.',
+      'Zak gecontroleerd en wissel van kant (reps per kant).',
+    ],
+    tip: 'Dit is de stap naar one-arm rows: je trekt bijna je hele gewicht met één arm, zonder dat je voeten hoger hoeven.',
   },
   {
     name: 'Bodyweight curls',
-    mark: { joint: 'eN', label: 'alleen je ellebogen buigen', dx: -10, dy: -14 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: -6 },
-    props: [{ t: 'bar', x: 70, y: 60 }],
-    frames: [
-      f(row(-8, -98), 400, 1000),
-      f({ ...row(-22, -112), ik: { an: [70, 60, -1], af: [71.5, 60, -1] } }, 400, 900),
-    ],
+    mark: { joint: 'eN', label: 'alleen je ellebogen buigen', dx: -14, dy: -16 },
+    arrow: { joint: 'head', from: 0, to: 1, bend: 6 },
+    face: -1,
+    props: [{ t: 'bar', x: 72, y: 64, post: true }],
+    frames: [f(row(10, 97.6, -6.2, [72, 64], -80), 400, 1100), f(row(10, 97.6, -20, [72, 64], -94), 500, 900)],
     cues: [
       'Onder een lage stang, handpalmen naar je toe.',
       'Buig alleen je ellebogen: breng je voorhoofd naar de stang.',
@@ -695,12 +754,13 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pulldown',
-    mark: { joint: 'hN', label: 'naar je bovenborst', dx: 14, dy: -2 },
+    mark: { joint: 'hN', label: 'naar je bovenborst', dx: 16, dy: -2 },
     arrow: { joint: 'hN', from: 0, to: 1, bend: 8 },
-    props: [{ t: 'box', x: 30, y: 78, w: 22, h: 5 }, { t: 'line', x1: 41, y1: 83, x2: 41, y2: 100 }, { t: 'cable', x: 44, y: 0 }],
+    vb: [0, -6, 120, 111],
+    props: [{ t: 'bench', x: 30, y: 81, w: 24 }, { t: 'box', x: 50, y: 64, w: 12, h: 5 }, { t: 'cable', x: 49, y: -6 }],
     frames: [
-      f({ spine: [-98, -100], ln: [0, 95], lf: [2, 97], at: ['hip', 42, 76], ik: { an: [44, 22, 1], af: [45, 22, 1] } }, 300, 900),
-      f({ spine: [-104, -106], ln: [0, 95], lf: [2, 97], at: ['hip', 42, 76], ik: { an: [46, 47, 1], af: [47, 47, 1] } }, 400, 900),
+      f({ spine: [-95, -97], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 44, 76], ik: { an: [46, 23.5, 1], af: [47, 23.5, 1], ln: [62.5, FOOT, -1], lf: [64, FOOT, -1] } }, 300, 1100),
+      f({ spine: [-102, -102], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 44, 76], ik: { an: [46.5, 48, 1], af: [47.5, 48, 1], ln: [62.5, FOOT, -1], lf: [64, FOOT, -1] } }, 400, 900),
     ],
     cues: [
       'Zit stevig, dijen onder het kussen.',
@@ -711,12 +771,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Rows',
-    mark: { joint: 'eN', label: 'ellebogen langs je lichaam', dx: 0, dy: -22 },
+    mark: { joint: 'eN', label: 'ellebogen langs je lichaam', dx: 0, dy: -26 },
     arrow: { joint: 'hN', from: 0, to: 1, bend: 6 },
-    props: [{ t: 'box', x: 26, y: 84, w: 26, h: 6 }, { t: 'box', x: 80, y: 82, w: 6, h: 18 }, { t: 'cable', x: 100, y: 70 }],
+    props: [{ t: 'bench', x: 24, y: 84.5, w: 28 }, { t: 'box', x: 75.5, y: 78, w: 5, h: 22 }, { t: 'cable', x: 108, y: 66 }],
     frames: [
-      f({ spine: [-75, -75], at: ['hip', 38, 82], ik: { ln: [79, 90, -1], lf: [79.5, 90, -1], an: [70, 66, 1], af: [71, 66, 1] } }, 300, 1000),
-      f({ spine: [-90, -92], at: ['hip', 38, 82], ik: { ln: [79, 90, -1], lf: [79.5, 90, -1], an: [48, 68, 1], af: [49, 68, 1] } }, 500, 900),
+      f({ spine: [-80, -80], ln: [0, 0, -72], lf: [0, 0, -72], at: ['hip', 38, 80.5], ik: { an: [68.5, 62, 1], af: [69.5, 62, 1], ln: [72, 88, -1], lf: [72.5, 86.5, -1] } }, 300, 1100),
+      f({ spine: [-90, -91], ln: [0, 0, -72], lf: [0, 0, -72], at: ['hip', 38, 80.5], ik: { an: [45, 70, 1], af: [46, 70, 1], ln: [72, 88, -1], lf: [72.5, 86.5, -1] } }, 500, 900),
     ],
     cues: [
       'Zit rechtop, knieën licht gebogen.',
@@ -727,12 +787,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Muscle-up step 1 (false grip)',
-    mark: { joint: 'hN', label: 'false grip', dx: 14, dy: 0 },
-    arrow: { joint: 'sh', from: 0, to: 1, bend: 12 },
+    mark: { joint: 'hN', label: 'false grip: pols over de stang', dx: 14, dy: -8 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 10 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: [0, -14, 120, 115],
     props: [BAR],
-    frames: [f(hang(), 600, 1000), f(pullTop({ at: ['sh', 53, 6], spine: [-108, -104], ln: [70, 78], lf: [72, 80] }), 500, 700)],
+    frames: [f(hang(), 600, 1100), f(hang({ at: ['sh', 55, 13], spine: [-100, -100], ln: [72, 84, 50], lf: [75, 87, 53] }), 500, 650)],
     cues: [
       'False grip: je pols over de stang, de stang ligt in je handpalm.',
       'Trek explosief hoog: borst naar de stang.',
@@ -743,16 +803,16 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Muscle-up',
-    mark: { joint: 'head', label: 'borst over de stang', dx: 16, dy: -4 },
+    mark: { joint: 'sh', label: 'borst over de stang', dx: 18, dy: -6 },
     arrow: { joint: 'sh', from: 0, to: 3, bend: 16 },
     floor: false,
     vb: [0, -40, 120, 145],
     props: [BAR],
     frames: [
       f(hang(), 500, 1100),
-      f(pullTop({ at: ['sh', 52, 6], spine: [-110, -106], ln: [66, 72], lf: [68, 74] }), 0, 600),
-      f(pullTop({ at: ['sh', 64, -2], spine: [-58, -62], ln: [100, 110], lf: [102, 112] }), 0, 400),
-      f(pullTop({ at: ['sh', 64, -16], spine: [-80, -82], ln: [96, 104], lf: [98, 106] }), 900, 500),
+      f(hang({ at: ['sh', 55, 10], spine: [-105, -105], ln: [66, 76, 50], lf: [69, 79, 53] }), 0, 600),
+      f(hang({ at: ['sh', 66, 2], spine: [-60, -60], ln: [100, 112, 80], lf: [103, 115, 83] }), 0, 420),
+      f(hang({ at: ['sh', 61, -17], spine: [-84, -84], ln: [84, 88, 60], lf: [87, 91, 63] }), 900, 550),
     ],
     cues: [
       'Explosieve pull: trek de stang naar je onderborst/buik.',
@@ -766,9 +826,9 @@ export const GUIDES: Guide[] = [
     name: 'Hollow body hang',
     mark: { joint: 'hip', label: 'billen aan, buik in', dx: 14, dy: 0 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
-    frames: [f(hang({ spine: [-86, -93], ln: [81, 81, 81], lf: [83, 83, 83] }))],
+    frames: [f(hang({ spine: [-84, -94], ln: [80, 80, 80], lf: [82, 82, 82] }))],
     cues: [
       'Hang aan de stang, schouders actief.',
       'Kantel je bekken: billen aan, buik in.',
@@ -778,15 +838,15 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'German hang',
-    mark: { joint: 'sh', label: 'schouders niet forceren', dx: 12, dy: 12 },
-    arrow: { joint: 'hip', from: 0, to: 2, bend: 20 },
+    mark: { joint: 'sh', label: 'schouders niet forceren', dx: 12, dy: 14 },
+    arrow: { joint: 'hip', from: 1, to: 2, bend: -14 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
     frames: [
-      f(hang({ ln: [0, 90], lf: [2, 92] }), 300, 1100),
-      f(hang({ spine: [-270, -270], ln: [120, -150], lf: [122, -148] }), 200, 1500),
-      f(hang({ spine: [-420, -420], head: 15, at: ['sh', 66, 36.5], ln: [110, 80], lf: [112, 82] }), 2000, 1700),
+      f(hang({ head: -90, ln: [-10, 100, 60], lf: [-7, 103, 63] }), 300, 1200),
+      f(hang({ spine: [-270, -270], head: -270, ln: [-220, -80, -120], lf: [-217, -77, -117] }), 200, 1500),
+      f(hang({ spine: [-420, -420], head: -402, at: ['sh', 66, 36.5], ln: [-285, -265, -300], lf: [-282, -262, -297] }), 2000, 1700),
     ],
     key: 2,
     cues: [
@@ -799,16 +859,16 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Skin the cat',
-    mark: { joint: 'hN', label: 'armen gestrekt', dx: 16, dy: 4 },
-    arrow: { joint: 'hip', from: 0, to: 2, bend: 20 },
+    mark: { joint: 'eN', label: 'armen gestrekt', dx: 16, dy: -4 },
+    arrow: { joint: 'hip', from: 1, to: 2, bend: -14 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
     frames: [
-      f(hang({ ln: [0, 90], lf: [2, 92] }), 400, 1300),
-      f(hang({ spine: [-270, -270], ln: [120, -150], lf: [122, -148] }), 200, 1400),
-      f(hang({ spine: [-420, -420], head: 15, at: ['sh', 66, 36.5], ln: [110, 80], lf: [112, 82] }), 700, 1400),
-      f(hang({ spine: [-270, -270], ln: [120, -150], lf: [122, -148] }), 200, 1400),
+      f(hang({ head: -90, ln: [-10, 100, 60], lf: [-7, 103, 63] }), 400, 1400),
+      f(hang({ spine: [-270, -270], head: -270, ln: [-220, -80, -120], lf: [-217, -77, -117] }), 200, 1400),
+      f(hang({ spine: [-420, -420], head: -402, at: ['sh', 66, 36.5], ln: [-285, -265, -300], lf: [-282, -262, -297] }), 700, 1400),
+      f(hang({ spine: [-270, -270], head: -270, ln: [-220, -80, -120], lf: [-217, -77, -117] }), 200, 1400),
     ],
     key: 2,
     cues: [
@@ -820,14 +880,14 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Tuck back lever',
-    mark: { joint: 'mid', label: 'rug horizontaal', dx: 0, dy: 20 },
-    arrow: { joint: 'hip', from: 0, to: 1, bend: 10 },
+    mark: { joint: 'mid', label: 'rug horizontaal', dx: 0, dy: -18 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: -10 },
     floor: false,
-    vb: [0, -10, 120, 115],
+    vb: HANG_VB,
     props: [BAR],
     frames: [
-      f({ spine: [-270, -270], ln: [120, -150], lf: [122, -148], at: ['hN', 60, 10], an: [-90, -90], af: [-88, -88] }, 400, 1200),
-      f({ spine: [-360, -360], head: 0, ln: [62, -132, 180], lf: [64, -130, 180], at: ['hN', 60, 10], an: [-107, -107], af: [-105, -105] }, 2400, 1300),
+      f(hang({ spine: [-270, -270], head: -270, ln: [-220, -80, -120], lf: [-217, -77, -117] }), 400, 1200),
+      f(hang({ spine: [-360, -360], head: -352, at: ['sh', 75.5, 32.1], ln: [-300, -170, -170], lf: [-297, -167, -167] }), 2400, 1400),
     ],
     key: 1,
     cues: [
@@ -842,11 +902,11 @@ export const GUIDES: Guide[] = [
   // ----- mobility skills -----
   {
     name: 'Shoulder stand',
-    mark: { joint: 'eN', label: 'ellebogen op de grond', dx: 14, dy: -8 },
-    arrow: { joint: 'aN', from: 0, to: 1, bend: -8 },
+    mark: { joint: 'eN', label: 'ellebogen op de grond', dx: 14, dy: -10 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 10 },
     frames: [
-      f({ spine: [180, 180], head: 180, an: [0, 0], af: [1, 1], ln: [-90, -90, -90], lf: [-92, -92, -92], at: ['sh', 44, 95] }, 500, 1100),
-      f({ spine: [90, 90], head: 180, an: [0, -140], af: [1, -138], ln: [-90, -90, -90], lf: [-92, -92, -92], at: ['sh', 44, 95] }, 2200, 1100),
+      f({ spine: [179, 180], head: 180, ln: [-90, -90, -90], lf: [-91.5, -91.5, -91.5], at: ['sh', 44, 95.6], ik: hands(69.5, 97, 1) }, 500, 1100),
+      f({ spine: [86, 86], head: 180, ln: [-88, -88, -88], lf: [-89.5, -89.5, -89.5], at: ['sh', 44, 95.6], ik: hands(49, 84, 1) }, 2200, 1200),
     ],
     key: 1,
     cues: [
@@ -859,9 +919,9 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Straddle sit',
-    mark: { joint: 'sh', label: 'rug recht', dx: 16, dy: -6 },
+    mark: { joint: 'sh', label: 'rug recht', dx: 18, dy: -8 },
     view: 'front',
-    frames: [f({ spine: [-90, -90], w: 7, hw: 5, ln: [10, 10, -80], lf: [170, 170, -100], at: ['hip', 60, 94], ik: { an: [74, 99, 1], af: [46, 99, -1] } })],
+    frames: [f({ spine: [-90, -90], w: 7, hw: 5, ln: [9, 9, -80], lf: [171, 171, -100], at: ['hip', 60, 93], ik: { an: [72, 90, -1], af: [48, 90, 1] } })],
     cues: [
       'Zit in spreidzit, benen gestrekt, knieën naar het plafond.',
       'Rug recht, zit op je zitbotjes (niet achterover).',
@@ -871,11 +931,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pancake stretch',
-    mark: { joint: 'head', label: 'rug lang, reik naar voren', dx: 0, dy: 14 },
+    mark: { joint: 'mid', label: 'rug lang, reik naar voren', dx: 26, dy: 22 },
     view: 'top',
     floor: false,
-    props: [{ t: 'mat', x: 12, y: 14, w: 96, h: 90 }],
-    frames: [f({ spine: [90, 90], head: 90, w: 7, hw: 5, an: [84, 84], af: [96, 96], ln: [38, 38, 38], lf: [142, 142, 142], at: ['hip', 60, 24] })],
+    props: [{ t: 'mat', x: 10, y: 10, w: 100, h: 92 }],
+    frames: [f({ spine: [-90, -90], w: 7, hw: 5, an: [-80, -86], af: [-100, -94], ln: [-32, -32, -32], lf: [-148, -148, -148], at: ['hip', 60, 84] })],
     cues: [
       'Zit in spreidzit, benen zo wijd als comfortabel, knieën omhoog.',
       'Kantel vanuit je heupen naar voren met een rechte rug.',
@@ -885,11 +945,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pike stretch',
-    mark: { joint: 'kN', label: 'knieën gestrekt', dx: 0, dy: -14 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: -10 },
+    mark: { joint: 'kN', label: 'knieën gestrekt', dx: -4, dy: 0 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: -10 },
     frames: [
-      f({ spine: [-90, -90], an: [-82, -82], af: [-80, -80], ln: [0, 0, -80], lf: [1, 1, -80], at: ['hip', 36, 95] }, 500, 1200),
-      f({ spine: [-28, -5], ln: [0, 0, -80], lf: [1, 1, -80], at: ['hip', 36, 95], ik: { an: [72, 90, 1], af: [73, 90, 1] } }, 2200, 1500),
+      f({ spine: [-90, -88], head: -85, ln: [0, 0, -80], lf: [1, 1, -80], at: ['hip', 34, 94.8], ik: { an: [50, 91, -1], af: [51, 91, -1] } }, 500, 1200),
+      f({ spine: [-38, -12], head: 2, ln: [0, 0, -80], lf: [1, 1, -80], at: ['hip', 34, 94.8], ik: { an: [70, 88, -1], af: [71, 88, -1] } }, 2200, 1500),
     ],
     key: 1,
     cues: [
@@ -902,21 +962,21 @@ export const GUIDES: Guide[] = [
   // ----- legs -----
   {
     name: 'Pistol links negatives',
-    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 20, dy: -6 },
-    arrow: { joint: 'hip', from: 0, to: 1, bend: -10 },
+    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 16, dy: -8 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 10 },
     frames: [f(pistolTop, 400, 1500), f(pistolBottom, 300, 4500)],
     cues: [
       'Sta op één been, ander been gestrekt naar voren, armen vooruit.',
       'Zak in ± 5 seconden zo diep mogelijk.',
       'Knie in lijn met je tenen, hiel blijft op de grond.',
-      'Kom omhoog met hulp (deurpost, TRX of twee benen).',
+      'Ga onderin op je box zitten of pak iets vast, en kom met twee benen omhoog.',
     ],
-    tip: 'Hiel komt los? Leg een klein schijfje onder je hiel of houd iets vast.',
+    tip: 'Zak naar je box of stepper als doel: elke paar weken een lagere hoogte, tot je zonder kunt.',
   },
   {
     name: 'Pistol links',
-    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 20, dy: -6 },
-    arrow: { joint: 'hip', from: 0, to: 1, bend: -10 },
+    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 16, dy: -8 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 10 },
     frames: [f(pistolTop, 400, 1100), f(pistolBottom, 300, 1500)],
     cues: [
       'Sta op één been, ander been gestrekt naar voren, armen vooruit.',
@@ -927,8 +987,8 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pistol rechts',
-    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 20, dy: -6 },
-    arrow: { joint: 'hip', from: 0, to: 1, bend: -10 },
+    mark: { joint: 'kN', label: 'knie boven je tenen', dx: 16, dy: -8 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 10 },
     frames: [f(pistolTop, 400, 1100), f(pistolBottom, 1000, 1500)],
     cues: [
       'Sta op één been, ander been gestrekt naar voren, armen vooruit.',
@@ -939,12 +999,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Bulgarian split squat',
-    mark: { joint: 'kN', label: 'knie boven je voet', dx: 14, dy: -14 },
+    mark: { joint: 'kN', label: 'knie boven je voet', dx: 12, dy: -16 },
     arrow: { joint: 'hip', from: 0, to: 1, bend: 8 },
-    props: [{ t: 'box', x: 6, y: 72, w: 26, h: 28 }, { t: 'dumbbells' }],
+    props: [{ t: 'bench', x: 6, y: 78, w: 30 }, { t: 'dumbbells' }],
     frames: [
-      f({ spine: [-84, -84], an: [92, 90], af: [94, 92], lf: [0, 0, 160], at: ['hip', 54, 65], ik: { ln: [65, 97, -1], lf: [27, 69, -1] } }, 400, 1300),
-      f({ spine: [-78, -78], an: [90, 90], af: [92, 92], lf: [0, 0, 160], at: ['hip', 48, 80], ik: { ln: [65, 97, -1], lf: [27, 69, -1] } }, 300, 1300),
+      f({ spine: [-84, -84], an: [92, 88], af: [95, 91], ln: [0, 0, 0], lf: [0, 0, 172], at: ['hip', 54, 64], ik: { ln: [64, FOOT, -1], lf: [27, 76, -1] } }, 400, 1300),
+      f({ spine: [-78, -78], an: [91, 87], af: [94, 90], ln: [0, 0, 0], lf: [0, 0, 172], at: ['hip', 50, 80], ik: { ln: [64, FOOT, -1], lf: [27, 76, -1] } }, 300, 1400),
     ],
     cues: [
       'Achterste voet op een bank, voorste voet een grote stap ervoor.',
@@ -956,12 +1016,12 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Squats tempo',
-    mark: { joint: 'kN', label: 'knieën boven je tenen', dx: 16, dy: -4 },
+    mark: { joint: 'kN', label: 'knieën boven je tenen', dx: 14, dy: -6 },
     arrow: { joint: 'hip', from: 0, to: 1, bend: 8 },
     props: [{ t: 'dumbbells' }],
     frames: [
-      f({ spine: [-90, -90], at: ['hip', 57, 63], ik: { ln: [59, 97, -1], lf: [60.5, 97, -1], an: [63, 45, -1], af: [64, 45, -1] } }, 500, 900),
-      f({ spine: [-58, -64], at: ['hip', 44, 84], ik: { ln: [59, 97, -1], lf: [60.5, 97, -1], an: [66, 66, -1], af: [67, 66, -1] } }, 1000, 3000),
+      f({ spine: [-88, -88], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 58.5, 62.1], ik: { ln: [60, FOOT, -1], lf: [61.5, FOOT, -1], an: [66, 42.5, 1], af: [66.8, 42.5, 1] } }, 500, 900),
+      f({ spine: [-62, -68], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 49.8, 84.1], ik: { ln: [60, FOOT, -1], lf: [61.5, FOOT, -1], an: [67, 64, 1], af: [67.8, 64, 1] } }, 1000, 3000),
     ],
     cues: [
       'Gewicht voor je borst (goblet), voeten iets breder dan heupbreedte.',
@@ -972,11 +1032,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Reverse lunges',
-    mark: { joint: 'kF', label: 'knie bijna op de grond', dx: -14, dy: -18 },
+    mark: { joint: 'kF', label: 'knie bijna op de grond', dx: -10, dy: -22 },
     arrow: { joint: 'aF', from: 0, to: 1, bend: 8 },
     frames: [
-      f({ spine: [-90, -90], an: [88, 86], af: [92, 90], lf: [0, 0, 0], at: ['hip', 56, 64], ik: { ln: [60, 97, -1], lf: [58, 97, -1] } }, 400, 1000),
-      f({ spine: [-86, -86], an: [92, 90], af: [88, 86], lf: [0, 0, 70], at: ['hip', 50, 80], ik: { ln: [63, 97, -1], lf: [30, 95, -1] } }, 300, 1100),
+      f({ spine: [-89, -89], an: [93, 84], af: [90, 80], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 60, 62.2], ik: { ln: [62, FOOT, -1], lf: [58.5, FOOT, -1] } }, 400, 1000),
+      f({ spine: [-86, -86], an: [97, 84], af: [86, 76], ln: [0, 0, 0], lf: [0, 0, 85], at: ['hip', 48, 79.5], ik: { ln: [62, FOOT, -1], lf: [23, TOE, -1] } }, 300, 1200),
     ],
     cues: [
       'Sta rechtop en stap met één been groot naar achteren.',
@@ -987,27 +1047,27 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Single leg calf raises',
-    mark: { joint: 'aN', label: 'zo hoog mogelijk', dx: -18, dy: 0 },
-    arrow: { joint: 'aN', from: 0, to: 1, bend: 6 },
-    props: [{ t: 'box', x: 57, y: 84, w: 24, h: 16 }, { t: 'wall', x: 82, from: 10, to: 84 }],
+    mark: { joint: 'aN', label: 'zo hoog mogelijk', dx: -18, dy: -4 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 0 },
+    props: [{ t: 'stepper', x: 50, y: 90, w: 32 }, { t: 'wall', x: 86, from: 6 }],
     frames: [
-      f({ spine: [-90, -90], ln: [0, 0, -35], lf: [95, 150], at: ['hip', 55, 53.5], ik: { ln: [55, 87.5, -1], an: [80, 30, -1] } }, 300, 900),
-      f({ spine: [-90, -90], ln: [0, 0, 60], lf: [95, 150], at: ['hip', 56.5, 45.7], ik: { ln: [56.5, 79.7, -1], an: [80, 26, -1] } }, 600, 800),
+      f({ spine: [-90, -90], ln: [90, 90, -20], lf: [96, 165, 120], at: ['aN', 48.3, 89.3], ik: { an: [84.5, 44, 1] } }, 500, 1000),
+      f({ spine: [-90, -90], ln: [90, 90, 55], lf: [96, 165, 120], at: ['aN', 50.1, 83.5], ik: { an: [84.5, 38, 1] } }, 700, 800),
     ],
     cues: [
-      'Sta op de bal van één voet op de rand van een trede, hiel vrij.',
+      'Sta op de bal van één voet op de rand van je stepper, hiel vrij.',
       'Laat je hiel zo ver mogelijk zakken.',
-      'Kom zo hoog mogelijk op je tenen.',
+      'Kom zo hoog mogelijk op je tenen en houd 1 tel vast.',
       'Houd je vast aan de muur voor balans, niet om te helpen.',
     ],
   },
   {
     name: 'Reverse nordic partials',
-    mark: { joint: 'hip', label: 'heupen gestrekt', dx: 16, dy: 0 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: 10 },
+    mark: { joint: 'hip', label: 'heupen gestrekt', dx: 16, dy: -8 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 10 },
     frames: [
-      f({ spine: [-90, -90], an: [0, 0], af: [2, 2], ln: [90, 180, 180], lf: [92, 182, 182], at: ['kN', 60, 96] }, 400, 1000),
-      f({ spine: [-122, -122], an: [-32, -32], af: [-30, -30], ln: [58, 180, 180], lf: [60, 182, 182], at: ['kN', 60, 96] }, 400, 1600),
+      f({ spine: [-90, -90], an: [10, 0], af: [13, 3], ln: [90, 180, 180], lf: [91.5, 181, 181], at: ['kN', 62, 96.8] }, 400, 1000),
+      f({ spine: [-122, -122], an: [-22, -32], af: [-19, -29], ln: [58, 180, 180], lf: [59.5, 181, 181], at: ['kN', 62, 96.8] }, 400, 1700),
     ],
     cues: [
       'Kniel met je knieën op een mat, tenen gestrekt.',
@@ -1018,11 +1078,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Reverse nordic',
-    mark: { joint: 'hip', label: 'heupen gestrekt', dx: 16, dy: 0 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: 12 },
+    mark: { joint: 'hip', label: 'heupen gestrekt', dx: 12, dy: -16 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: 12 },
     frames: [
-      f({ spine: [-90, -90], an: [0, 0], af: [2, 2], ln: [90, 180, 180], lf: [92, 182, 182], at: ['kN', 60, 96] }, 400, 1200),
-      f({ spine: [-152, -152], an: [-62, -62], af: [-60, -60], ln: [28, 180, 180], lf: [30, 182, 182], at: ['kN', 60, 96] }, 400, 3000),
+      f({ spine: [-90, -90], an: [10, 0], af: [13, 3], ln: [90, 180, 180], lf: [91.5, 181, 181], at: ['kN', 66, 96.8] }, 400, 1200),
+      f({ spine: [-152, -152], an: [-52, -62], af: [-49, -59], ln: [28, 180, 180], lf: [29.5, 181, 181], at: ['kN', 66, 96.8] }, 400, 3000),
     ],
     cues: [
       'Kniel, lichaam recht van knie tot schouder.',
@@ -1033,14 +1093,14 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Archer squats',
-    mark: { joint: 'head', label: 'zak naar één kant', dx: 16, dy: -6 },
+    mark: { joint: 'kN', label: 'zak naar één kant', dx: 10, dy: -24 },
     arrow: { joint: 'hip', from: 0, to: 1, bend: 6 },
     view: 'front',
     frames: [
-      f({ spine: [-90, -90], w: 7, hw: 5, an: [80, 80], af: [100, 100], at: ['hip', 60, 67], ik: { ln: [82, 97, -1], lf: [38, 97, 1] } }, 400, 900),
-      f({ spine: [-96, -96], w: 7, hw: 5, an: [80, 80], af: [100, 100], at: ['hip', 45, 82], ik: { ln: [82, 97, -1], lf: [38, 97, 1] } }, 600, 1200),
-      f({ spine: [-90, -90], w: 7, hw: 5, an: [80, 80], af: [100, 100], at: ['hip', 60, 67], ik: { ln: [82, 97, -1], lf: [38, 97, 1] } }, 400, 1200),
-      f({ spine: [-84, -84], w: 7, hw: 5, an: [80, 80], af: [100, 100], at: ['hip', 75, 82], ik: { ln: [82, 97, -1], lf: [38, 97, 1] } }, 600, 1200),
+      f({ spine: [-90, -90], w: 7, hw: 5, ln: [0, 0, 30], lf: [0, 0, 150], at: ['hip', 60, 67], ik: { ln: [82, FOOT, -1], lf: [38, FOOT, 1], an: [61.5, 54, -1], af: [58.5, 54, 1] } }, 400, 900),
+      f({ spine: [-86, -86], w: 7, hw: 5, fs: { ln: 0.62 }, ln: [0, 0, 30], lf: [0, 0, 150], at: ['hip', 73, 83], ik: { ln: [82, FOOT, -1], lf: [37, FOOT, 1], an: [75.5, 70, -1], af: [72.5, 70, 1] } }, 600, 1300),
+      f({ spine: [-90, -90], w: 7, hw: 5, ln: [0, 0, 30], lf: [0, 0, 150], at: ['hip', 60, 67], ik: { ln: [82, FOOT, -1], lf: [38, FOOT, 1], an: [61.5, 54, -1], af: [58.5, 54, 1] } }, 400, 1100),
+      f({ spine: [-94, -94], w: 7, hw: 5, fs: { lf: 0.62 }, ln: [0, 0, 30], lf: [0, 0, 150], at: ['hip', 47, 83], ik: { ln: [83, FOOT, -1], lf: [38, FOOT, 1], an: [47.5, 70, -1], af: [44.5, 70, 1] } }, 600, 1300),
     ],
     key: 1,
     cues: [
@@ -1052,11 +1112,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Sissy squats',
-    mark: { joint: 'kN', label: 'knieën naar voren', dx: 12, dy: -10 },
-    arrow: { joint: 'kN', from: 0, to: 1, bend: 8 },
+    mark: { joint: 'kN', label: 'knieën naar voren en omlaag', dx: 6, dy: -22 },
+    arrow: { joint: 'kN', from: 0, to: 1, bend: -8 },
     frames: [
-      f({ spine: [-90, -90], an: [0, 0], af: [2, 2], ln: [0, 0, 70], lf: [0, 0, 70], at: ['hip', 44, 61], ik: { ln: [44, 95, -1], lf: [45.5, 95, -1] } }, 400, 1000),
-      f({ spine: [-115, -115], an: [-22, -22], af: [-20, -20], ln: [0, 0, 70], lf: [0, 0, 70], at: ['hip', 53, 72.7], ik: { ln: [44, 95, -1], lf: [45.5, 95, -1] } }, 300, 1500),
+      f({ spine: [-90, -90], an: [20, 0], af: [23, 3], ln: [90, 90, 60], lf: [91.5, 91.5, 62], at: ['aN', 46, 94] }, 400, 1000),
+      f({ spine: [-130, -130], an: [-20, -40], af: [-17, -37], ln: [50, 145, 60], lf: [51.5, 146, 62], at: ['aN', 46, 94] }, 300, 1600),
     ],
     cues: [
       'Sta op je tenen, houd eventueel iets vast voor balans.',
@@ -1068,11 +1128,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Single-leg glute bridges',
-    mark: { joint: 'hip', label: 'heup omhoog', dx: 0, dy: -18 },
-    arrow: { joint: 'hip', from: 0, to: 1, bend: -6 },
+    mark: { joint: 'hip', label: 'heup omhoog', dx: -4, dy: -22 },
+    arrow: { joint: 'hip', from: 0, to: 1, bend: 0 },
     frames: [
-      f({ spine: [180, 180], head: 180, an: [0, 0], af: [1, 1], lf: [-40, -40, -40], at: ['sh', 30, 95], ik: { ln: [72, 97, -1] } }, 400, 900),
-      f({ spine: [146, 160], head: 180, an: [0, 0], af: [1, 1], lf: [-27, -27, -27], at: ['sh', 30, 95], ik: { ln: [72, 97, -1] } }, 800, 800),
+      f({ spine: [178, 180], head: 180, an: [3, 3], af: [5, 5], ln: [0, 0, 0], lf: [-45, -45, -45], at: ['sh', 30, 95.6], ik: { ln: [74, FOOT, -1] } }, 400, 900),
+      f({ spine: [150, 162], head: 180, an: [3, 3], af: [5, 5], ln: [0, 0, 0], lf: [-20, -20, -20], at: ['sh', 30, 95.6], ik: { ln: [74, FOOT, -1] } }, 900, 800),
     ],
     cues: [
       'Lig op je rug, één voet plat op de grond, het andere been gestrekt omhoog.',
@@ -1080,16 +1140,17 @@ export const GUIDES: Guide[] = [
       'Knijp bovenin je billen samen; rechte lijn van knie tot schouder.',
       'Langzaam zakken, heup net niet neerleggen.',
     ],
+    tip: 'Zwaarder zonder extra gewicht: leg je schouders of je voet op je stepper.',
   },
   {
     name: 'Step-ups',
-    mark: { joint: 'aN', label: 'hele voet op de box', dx: 10, dy: -14 },
-    arrow: { joint: 'hip', from: 0, to: 2, bend: -10 },
-    props: [{ t: 'box', x: 64, y: 72, w: 32, h: 28 }],
+    mark: { joint: 'aN', label: 'hele voet op de box', dx: 14, dy: -12 },
+    arrow: { joint: 'hip', from: 0, to: 2, bend: -8 },
+    props: [{ t: 'box', x: 64, y: 78, w: 36, h: 22, label: 'box' }],
     frames: [
-      f({ spine: [-86, -86], lf: [0, 0, 0], at: ['hip', 54, 64], ik: { ln: [71, 69, -1], lf: [52, 97, -1] } }, 300, 900),
-      f({ spine: [-88, -88], lf: [0, 0, 0], at: ['hip', 66, 46], ik: { ln: [71, 69, -1], lf: [62, 78, -1] } }, 0, 700),
-      f({ spine: [-90, -90], lf: [0, 0, 0], at: ['hip', 72, 37], ik: { ln: [72, 69, -1], lf: [75.5, 69, -1] } }, 400, 600),
+      f({ spine: [-82, -82], an: [80, 60], af: [105, 95], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 56, 62.6], ik: { ln: [72, 75.9, -1], lf: [52, FOOT, -1] } }, 300, 1000),
+      f({ spine: [-85, -85], an: [92, 80], af: [92, 82], ln: [0, 0, 0], lf: [0, 0, 30], at: ['hip', 65, 50], ik: { ln: [72, 75.9, -1], lf: [59, 81, -1] } }, 0, 750),
+      f({ spine: [-90, -90], an: [93, 86], af: [90, 84], ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 73, 40], ik: { ln: [72, 75.9, -1], lf: [76, 75.9, -1] } }, 500, 650),
     ],
     cues: [
       'Zet je hele voet op de box.',
@@ -1097,14 +1158,15 @@ export const GUIDES: Guide[] = [
       'Sta bovenin helemaal rechtop.',
       'Stap gecontroleerd terug en wissel van been.',
     ],
+    tip: 'Zwaarder: langzamer zakken (3 sec) of dumbbells erbij. Een hogere box hoeft niet.',
   },
 
   // ----- mobility -----
   {
     name: 'Cat cow',
-    mark: { joint: 'mid', label: 'rug hol, dan rond', dx: 0, dy: -20 },
-    arrow: { joint: 'mid', from: 0, to: 1, bend: 8 },
-    frames: [f(quad([12, -38], -45), 900, 1300), f(quad([-40, 14], 75), 900, 1300)],
+    mark: { joint: 'mid', label: 'rug hol, dan rond', dx: -4, dy: -24 },
+    arrow: { joint: 'mid', from: 0, to: 1, bend: 0 },
+    frames: [f(quad([1.4, -36.4], -55), 900, 1300), f(quad([-36.4, 1.4], 62), 900, 1300)],
     cues: [
       'Handen onder je schouders, knieën onder je heupen.',
       'Cow: buik naar de grond, borst en blik omhoog.',
@@ -1114,11 +1176,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Cobra pose',
-    mark: { joint: 'hip', label: 'heupen op de grond', dx: -10, dy: -12 },
+    mark: { joint: 'hip', label: 'heupen op de grond', dx: -10, dy: -16 },
     arrow: { joint: 'head', from: 0, to: 1, bend: -8 },
     frames: [
-      f({ spine: [0, 0], head: 0, an: [0, 0], ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 54, 96], ik: { an: [79, 99, 1], af: [80, 99, 1] } }, 500, 1300),
-      f({ spine: [-22, -58], head: -50, ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 54, 96], ik: { an: [79, 99, 1], af: [80, 99, 1] } }, 2000, 1300),
+      f({ spine: [-2, -2], head: -4, ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 50, 95.6], ik: hands(72) }, 500, 1300),
+      f({ spine: [-25, -62], head: -55, ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 50, 95.6], ik: hands(72) }, 2000, 1300),
     ],
     key: 1,
     cues: [
@@ -1130,11 +1192,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: "Child's pose",
-    mark: { joint: 'hip', label: 'billen op je hielen', dx: -6, dy: -16 },
-    arrow: { joint: 'head', from: 0, to: 1, bend: -14 },
+    mark: { joint: 'hip', label: 'billen op je hielen', dx: -8, dy: -18 },
+    arrow: { joint: 'sh', from: 0, to: 1, bend: -12 },
     frames: [
-      f({ spine: [-90, -90], an: [-95, -95], af: [-93, -93], ln: [90, 180, 180], lf: [92, 182, 182], at: ['kN', 62, 96] }, 400, 1300),
-      f({ spine: [12, 18], head: 10, an: [0, 0], af: [1, 1], ln: [30, 180, 180], lf: [32, 182, 182], at: ['kN', 62, 96] }, 2500, 1500),
+      f({ spine: [-90, -90], head: -90, ln: [30.7, 180, 180], lf: [32, 181, 181], at: ['kN', 62, 96.8], ik: hands(58, 86, -1) }, 400, 1300),
+      f({ spine: [-8, 12], head: 40, ln: [30.7, 180, 180], lf: [32, 181, 181], at: ['kN', 62, 96.8], ik: hands(96.5, 98.3, -1) }, 2500, 1500),
     ],
     key: 1,
     cues: [
@@ -1146,10 +1208,10 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Superman',
-    mark: { joint: 'hN', label: 'armen en benen los', dx: -8, dy: -12 },
+    mark: { joint: 'hN', label: 'armen en benen los', dx: -10, dy: -14 },
     frames: [
-      f({ spine: [0, 0], head: 0, an: [0, 0], af: [1, 1], ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 54, 96] }, 400, 900),
-      f({ spine: [-6, -12], head: -14, an: [-14, -14], af: [-12, -12], ln: [188, 188, 188], lf: [189, 189, 189], at: ['hip', 54, 96] }, 1500, 900),
+      f({ spine: [-2, -2], head: -2, an: [-1, -1], af: [0, 0], ln: [180, 180, 180], lf: [181, 181, 181], at: ['hip', 56, 95.8] }, 500, 900),
+      f({ spine: [-8, -20], head: -26, an: [-24, -24], af: [-21, -21], ln: [190, 190, 190], lf: [192, 192, 192], at: ['hip', 56, 95.8] }, 1500, 900),
     ],
     key: 1,
     cues: [
@@ -1167,9 +1229,9 @@ export const GUIDES: Guide[] = [
     floor: false,
     props: [{ t: 'mat', x: 18, y: 6, w: 84, h: 100 }],
     frames: [
-      f({ spine: [-90, -90], w: 7, hw: 4, an: [80, 80], af: [100, 100], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 40] }, 400, 1100),
-      f({ spine: [-90, -90], w: 7, hw: 4, an: [0, 0], af: [180, 180], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 40] }, 0, 1100),
-      f({ spine: [-90, -90], w: 7, hw: 4, an: [-60, -60], af: [240, 240], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 40] }, 400, 1100),
+      f({ spine: [-90, -90], w: 7, hw: 4, an: [78, 78], af: [102, 102], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 42] }, 400, 1100),
+      f({ spine: [-90, -90], w: 7, hw: 4, an: [0, 0], af: [180, 180], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 42] }, 0, 1100),
+      f({ spine: [-90, -90], w: 7, hw: 4, an: [-62, -62], af: [242, 242], ln: [91, 91, 91], lf: [89, 89, 89], at: ['sh', 60, 42] }, 400, 1100),
     ],
     cues: [
       'Lig op je buik, armen langs je lichaam, iets van de grond.',
@@ -1180,11 +1242,11 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Squat to pike',
-    mark: { joint: 'sh', label: 'borst tegen je knieën', dx: 14, dy: -8 },
+    mark: { joint: 'sh', label: 'borst tegen je knieën', dx: 14, dy: -16 },
     arrow: { joint: 'hip', from: 0, to: 1, bend: -8 },
     frames: [
-      f({ spine: [-38, -55], head: -40, at: ['hip', 50, 90], ik: { ln: [58, 97, -1], lf: [59.5, 97, -1], an: [66, 99, 1], af: [67.5, 99, 1] } }, 500, 1300),
-      f({ spine: [40, 65], head: 70, at: ['hip', 44, 66], ik: { ln: [58, 97, -1], lf: [59.5, 97, -1], an: [66, 99, 1], af: [67.5, 99, 1] } }, 900, 1500),
+      f({ spine: [-66.8, -4.8], head: -28, ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 44, 87], ik: { ln: [58, FOOT, -1], lf: [59.5, FOOT, -1], an: [64, 98.3, -1], af: [65.5, 98.3, -1] } }, 500, 1300),
+      f({ spine: [40.8, 89.4], head: 96, ln: [0, 0, 0], lf: [0, 0, 0], at: ['hip', 52, 62.5], ik: { ln: [58, FOOT, -1], lf: [59.5, FOOT, -1], an: [64, 98.3, -1], af: [65.5, 98.3, -1] } }, 900, 1500),
     ],
     cues: [
       'Diepe hurk, pak je tenen vast of zet je handen onder je voeten.',
@@ -1195,9 +1257,9 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Prayer squat',
-    mark: { joint: 'eN', label: 'ellebogen duwen knieën uit', dx: 18, dy: -22 },
+    mark: { joint: 'eN', label: 'ellebogen duwen knieën uit', dx: 14, dy: -30 },
     view: 'front',
-    frames: [f({ spine: [-90, -90], w: 7, hw: 5, at: ['hip', 60, 82], ik: { ln: [76, 97, -1], lf: [44, 97, 1], an: [61.5, 65, 1], af: [58.5, 65, -1] } })],
+    frames: [f({ spine: [-90, -90], w: 7, hw: 5, fs: { ln: 0.85, lf: 0.85, sp: 0.8 }, ln: [0, 0, 35], lf: [0, 0, 145], at: ['hip', 60, 88], ik: { ln: [73, FOOT, -1], lf: [47, FOOT, 1], an: [61.2, 80, -1], af: [58.8, 80, 1] } })],
     cues: [
       'Diepe hurk, voeten iets breder dan heupbreedte.',
       'Handen tegen elkaar voor je borst.',
@@ -1207,9 +1269,10 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Pols- en onderarmstretch',
-    mark: { joint: 'hN', label: 'vingers naar je knieën', dx: 4, dy: -32 },
+    mark: { joint: 'hN', label: 'vingers naar je knieën', dx: 6, dy: -34 },
     arrow: { joint: 'hip', from: 0, to: 1, bend: -6 },
-    frames: [f(quad([-14, -14]), 600, 1200), f(quad([-10, -16], undefined, 70), 1200, 1500)],
+    fingers: -1,
+    frames: [f(quad([-16.5, -16.5], -10, 61), 600, 1200), f(quad([-17.7, -17.7], -8, 61, 70), 1400, 1500)],
     cues: [
       'Op handen en knieën, draai je handen zodat je vingers naar je knieën wijzen.',
       'Handpalmen plat op de grond.',
@@ -1222,10 +1285,10 @@ export const GUIDES: Guide[] = [
     mark: { joint: 'head', label: 'praattempo', dx: 14, dy: -4 },
     props: [{ t: 'line', x1: 8, y1: 100, x2: 112, y2: 91.7, w: 2.5 }],
     frames: [
-      f({ spine: [-84, -84], an: [104, 100], af: [70, 50], at: ['hip', 58, 61], ik: { ln: [70, 93.4, -1], lf: [46, 95.1, -1] } }, 0, 380),
-      f({ spine: [-84, -84], an: [90, 85], af: [90, 85], at: ['hip', 58, 59.5], ik: { ln: [56, 94.2, -1], lf: [60, 86, -1] } }, 0, 380),
-      f({ spine: [-84, -84], an: [70, 50], af: [104, 100], at: ['hip', 58, 61], ik: { ln: [46, 95.1, -1], lf: [70, 93.4, -1] } }, 0, 380),
-      f({ spine: [-84, -84], an: [90, 85], af: [90, 85], at: ['hip', 58, 59.5], ik: { ln: [60, 86, -1], lf: [56, 94.2, -1] } }, 0, 380),
+      f({ spine: [-84, -84], an: [108, 96], af: [68, 44], ln: [0, 0, -5], lf: [0, 0, 20], at: ['hip', 58, 59.6], ik: { ln: [70, 92.4, -1], lf: [45, 94.4, -1] } }, 0, 380),
+      f({ spine: [-84, -84], an: [90, 78], af: [88, 74], ln: [0, 0, -5], lf: [0, 0, 30], at: ['hip', 58, 58.2], ik: { ln: [57, 93.5, -1], lf: [59, 86, -1] } }, 0, 380),
+      f({ spine: [-84, -84], an: [68, 44], af: [108, 96], ln: [0, 0, 20], lf: [0, 0, -5], at: ['hip', 58, 59.6], ik: { ln: [45, 94.4, -1], lf: [70, 92.4, -1] } }, 0, 380),
+      f({ spine: [-84, -84], an: [88, 74], af: [90, 78], ln: [0, 0, 30], lf: [0, 0, -5], at: ['hip', 58, 58.2], ik: { ln: [59, 86, -1], lf: [57, 93.5, -1] } }, 0, 380),
     ],
     cues: [
       'Wandelen op een helling (± 10%) of rustig fietsen/hiken.',

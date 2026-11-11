@@ -198,3 +198,32 @@ describe('carryOver', () => {
     expect(carryOver('hs', 6, 0, [item('hs', 8, 0)], exs)).toEqual({ exercise: 'hs', sets: 6, target: 0 });
   });
 });
+
+describe('capped ladder steps (program rules by exercise name)', () => {
+  const rows = ex('rows-up', { name: 'Bodyweight rows voeten verhoogd', measure: 'reps', progress: true, next: 'archer' });
+  const archer = ex('archer', { name: 'Archer rows', measure: 'reps', default_sets: 3, default_target: 5, cue: 'Reps per kant' });
+  const sessions = [sess('s1', 1), sess('s2', 2)];
+
+  it('raises toward the cap first and says what comes after', () => {
+    const p = proposals(input({
+      items: [item('rows-up', 3, 10)],
+      exercises: [rows, archer],
+      sets: [...three('s1', 'rows-up', 10, 10, 10), ...three('s2', 'rows-up', 11, 10, 10)],
+      sessions,
+    }));
+    expect(p).toHaveLength(1);
+    expect(p[0]).toMatchObject({ kind: 'raise', from: 10, to: 11, cap: 12 });
+    expect(p[0].kind === 'raise' && p[0].then?.id).toBe('archer');
+    expect(p[0].kind === 'raise' && p[0].hint).toMatch(/box hoeft niet hoger/);
+  });
+
+  it('moves to the next step once the cap is reached', () => {
+    const p = proposals(input({
+      items: [item('rows-up', 3, 12)],
+      exercises: [rows, archer],
+      sets: [...three('s1', 'rows-up', 12, 12, 12), ...three('s2', 'rows-up', 12, 12, 13)],
+      sessions,
+    }));
+    expect(p[0]).toMatchObject({ kind: 'swap', sets: 3, target: 5, hint: 'Reps per kant' });
+  });
+});

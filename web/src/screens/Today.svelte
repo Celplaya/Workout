@@ -1,5 +1,6 @@
 <script lang="ts">
   import InfoButton from '../components/InfoButton.svelte';
+  import Gear from '../components/Gear.svelte';
   import Proposals from '../components/Proposals.svelte';
   import SyncDot from '../components/SyncDot.svelte';
   import { addDays, isoDate, longDate, weekdayName, weekdayOf } from '../lib/dates';
@@ -59,7 +60,7 @@
     </button>
   {/if}
 
-  {#if !store.active}<Proposals />{/if}
+  {#if !store.active}<Proposals /><Gear compact />{/if}
 
   {#if !day}
     <p class="empty">Schema laden…</p>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { body, capsule, type BodyOptions } from '../lib/body';
   import { at, solve, type Solved, type V } from '../lib/figure';
   import type { Guide } from '../lib/guides';
 
@@ -37,17 +38,24 @@
 
   const vb = $derived(guide.vb ?? [0, 0, 120, 105]);
   const floor = $derived(guide.floor === false ? null : (guide.floor ?? 100));
-  const P = (...p: V[]) => p.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join(' ');
 
-  // Face direction: perpendicular to the upper spine, toward the chest.
-  const nose = $derived.by(() => {
-    const d: V = [s.sh[0] - s.mid[0], s.sh[1] - s.mid[1]];
-    const l = Math.hypot(d[0], d[1]) || 1;
-    const k = guide.face ?? 1;
-    const f: V = [(-d[1] / l) * k, (d[0] / l) * k];
-    const r = 5.6;
-    return { a: [s.head[0] + f[0] * r * 0.55, s.head[1] + f[1] * r * 0.55] as V, b: [s.head[0] + f[0] * (r + 2.2), s.head[1] + f[1] * (r + 2.2)] as V };
+  const sideView = $derived((guide.view ?? 'side') === 'side');
+  // Hands hold on to something when any pose pins them (bar, parallettes, bench).
+  const grip = $derived(guide.frames.some((fr) => fr.p.ik?.an || fr.p.ik?.af) || !!guide.grip);
+  const opts = (p: { w?: number; hw?: number }, breath = 0): BodyOptions => ({
+    face: guide.face ?? 1,
+    w: p.w ?? 0,
+    hw: p.hw ?? 0,
+    side: sideView,
+    floor,
+    grip,
+    fingers: guide.fingers,
+    breath,
   });
+  const pose0 = $derived(guide.frames[0].p);
+  const breath = $derived(still ? 0 : Math.sin((time ?? now) / 520));
+  const b = $derived(body(s, opts(pose0, breath)));
+  const ghostBody = $derived(ghost ? body(ghost, opts(pose0)) : null);
 
   const arrowPath = $derived.by(() => {
     const a = guide.arrow;
@@ -82,16 +90,37 @@
 
   <!-- props behind -->
   <g class="prop">
-    {#if floor !== null}<line x1={vb[0] + 4} y1={floor} x2={vb[0] + vb[2] - 4} y2={floor} class="floor" />{/if}
+    {#if floor !== null}<line x1={vb[0] + 4} y1={floor + 0.7} x2={vb[0] + vb[2] - 4} y2={floor + 0.7} class="floor" />{/if}
     {#each guide.props ?? [] as p, i (i)}
       {#if p.t === 'mat'}
         <rect x={p.x} y={p.y} width={p.w} height={p.h} rx="4" class="mat" />
       {:else if p.t === 'wall'}
+        <rect x={(p.side ?? 1) > 0 ? p.x : p.x - 6} y={p.from ?? vb[1]} width="6" height={(p.to ?? floor ?? vb[1] + vb[3]) - (p.from ?? vb[1])} class="wallfill" />
         <line x1={p.x} y1={p.from ?? vb[1]} x2={p.x} y2={p.to ?? floor ?? vb[1] + vb[3]} class="wall" />
       {:else if p.t === 'box'}
         <rect x={p.x} y={p.y} width={p.w} height={p.h} rx="1.5" class="box" />
+        {#if p.h > 12}<line x1={p.x + 2.5} y1={p.y + 3.5} x2={p.x + p.w - 2.5} y2={p.y + 3.5} class="trim" />{/if}
+        {#if p.label}<text x={p.x + p.w / 2} y={p.y + p.h / 2 + 3} class="plabel" text-anchor="middle">{p.label}</text>{/if}
+      {:else if p.t === 'stepper'}
+        {@const fl = floor ?? 100}
+        <rect x={p.x + 1} y={p.y + 3} width="7" height={fl - p.y - 3} rx="1" class="box" />
+        <rect x={p.x + p.w - 8} y={p.y + 3} width="7" height={fl - p.y - 3} rx="1" class="box" />
+        <rect x={p.x} y={p.y} width={p.w} height="3.6" rx="1.6" class="deck" />
+        {#if p.label}<text x={p.x + p.w / 2} y={fl + 5} class="plabel" text-anchor="middle">{p.label}</text>{/if}
+      {:else if p.t === 'bench'}
+        {@const fl = floor ?? 100}
+        <line x1={p.x + 5} y1={p.y + 4} x2={p.x + 5} y2={fl} class="leg" />
+        <line x1={p.x + p.w - 5} y1={p.y + 4} x2={p.x + p.w - 5} y2={fl} class="leg" />
+        <rect x={p.x} y={p.y} width={p.w} height="4.6" rx="2.2" class="deck" />
+      {:else if p.t === 'pbar'}
+        {@const fl = floor ?? 100}
+        <line x1={p.x + 2.5} y1={p.y} x2={p.x + 1} y2={fl} class="leg" />
+        <line x1={p.x + p.w - 2.5} y1={p.y} x2={p.x + p.w - 1} y2={fl} class="leg" />
+        <line x1={p.x} y1={p.y} x2={p.x + p.w} y2={p.y} class="rail" />
       {:else if p.t === 'line'}
         <line x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} class="wall" style:stroke-width={p.w ?? 2} />
+      {:else if p.t === 'bar' && p.post}
+        <line x1={p.x} y1={p.y} x2={p.x} y2={floor ?? 100} class="post" />
       {:else if p.t === 'cable'}
         <line x1={s.hN[0]} y1={s.hN[1]} x2={p.x} y2={p.y} class="cable" />
       {/if}
@@ -99,56 +128,38 @@
   </g>
 
   <!-- ghost of the start pose -->
-  {#if ghost}
+  {#if ghostBody}
     <g class="ghost">
-      <polyline points={P(ghost.shF, ghost.eF, ghost.hF)} />
-      <polyline points={P(ghost.hipF, ghost.kF, ghost.aF, ghost.tF)} />
-      <polyline points={P(ghost.hip, ghost.mid, ghost.sh)} class="t" />
-      <circle cx={ghost.head[0]} cy={ghost.head[1]} r="5.6" />
-      <polyline points={P(ghost.hipN, ghost.kN, ghost.aN, ghost.tN)} />
-      <polyline points={P(ghost.shN, ghost.eN, ghost.hN)} />
+      {#each [...ghostBody.farArm, ...ghostBody.farLeg, ...ghostBody.core, ...ghostBody.head, ...ghostBody.nearLeg, ...ghostBody.nearArm] as d, i (i)}<path {d} />{/each}
     </g>
   {/if}
 
-  <!-- far limbs -->
-  <g class="far">
-    {#each [P(s.shF, s.eF, s.hF), P(s.hipF, s.kF, s.aF), P(s.aF, s.tF)] as pts, i (i)}
-      <polyline points={pts} class="ol" class:foot={i === 2} /><polyline points={pts} class="fill" class:foot={i === 2} />
-    {/each}
-    <circle cx={s.hF[0]} cy={s.hF[1]} r="2.6" class="hand" />
-  </g>
+  {#snippet group(ds: string[], cls: string)}
+    <g class={cls}>
+      {#each ds as d, i (i)}<path {d} class="ol" />{/each}
+      {#each ds as d, i (i)}<path {d} class="fl" />{/each}
+    </g>
+  {/snippet}
 
-  <!-- torso + head -->
-  <g class="near">
-    {#if s.shN[0] !== s.shF[0] || s.shN[1] !== s.shF[1]}
-      <line x1={s.shN[0]} y1={s.shN[1]} x2={s.shF[0]} y2={s.shF[1]} class="ol" /><line x1={s.shN[0]} y1={s.shN[1]} x2={s.shF[0]} y2={s.shF[1]} class="fill" />
-    {/if}
-    {#if s.hipN[0] !== s.hipF[0] || s.hipN[1] !== s.hipF[1]}
-      <line x1={s.hipN[0]} y1={s.hipN[1]} x2={s.hipF[0]} y2={s.hipF[1]} class="ol" /><line x1={s.hipN[0]} y1={s.hipN[1]} x2={s.hipF[0]} y2={s.hipF[1]} class="fill" />
-    {/if}
-    <polyline points={P(s.hip, s.mid, s.sh)} class="ol torso" />
-    <polyline points={P(s.hip, s.mid, s.sh)} class="fill torso" />
-    {#if (guide.view ?? 'side') === 'side'}<line x1={nose.a[0]} y1={nose.a[1]} x2={nose.b[0]} y2={nose.b[1]} class="nose" />{/if}
-    <circle cx={s.head[0]} cy={s.head[1]} r="5.6" class="head" />
-  </g>
-
-  <!-- near limbs -->
-  <g class="near">
-    {#each [P(s.hipN, s.kN, s.aN), P(s.aN, s.tN), P(s.shN, s.eN, s.hN)] as pts, i (i)}
-      <polyline points={pts} class="ol" class:foot={i === 1} /><polyline points={pts} class="fill" class:foot={i === 1} />
-    {/each}
-    <circle cx={s.hN[0]} cy={s.hN[1]} r="2.6" class="hand" />
-  </g>
+  {@render group(b.farArm, sideView ? 'far' : 'near')}
+  {@render group(b.farLeg, sideView ? 'far' : 'near')}
+  {@render group(b.core, 'core')}
+  {@render group(b.head, 'near')}
+  {#if b.eye}<circle cx={b.eye[0]} cy={b.eye[1]} r="0.8" class="eye" />{/if}
+  {@render group(b.nearLeg, 'near')}
+  {@render group(b.nearArm, 'near')}
 
   <!-- props in front -->
   <g class="prop">
     {#each guide.props ?? [] as p, i (i)}
       {#if p.t === 'bar'}
-        <circle cx={p.x} cy={p.y} r="3.2" class="solid" />
+        <circle cx={p.x} cy={p.y} r="3" class="solid" />
       {:else if p.t === 'dumbbells'}
-        {#each [s.hN, s.hF] as h, j (j)}<rect x={h[0] - 4} y={h[1] - 1.6} width="8" height="3.2" rx="1" class="iron" />{/each}
+        {#each [s.hN, s.hF] as h, j (j)}<rect x={h[0] - 4.5} y={h[1] - 1.8} width="9" height="3.6" rx="1.2" class="iron" />{/each}
       {:else if p.t === 'weight'}
-        <rect x={s.hip[0] - 3} y={s.hip[1] + 8} width="8" height="6" rx="1" class="iron" />
+        <rect x={s.hip[0] - 4} y={s.hip[1] + 7} width="9" height="7" rx="1.4" class="iron" />
+      {:else if p.t === 'vest'}
+        <path d={capsule(s.mid, [(s.mid[0] + s.sh[0] * 2) / 3, (s.mid[1] + s.sh[1] * 2) / 3], 5.6, 5.9)} class="vest" />
       {:else if p.t === 'plate'}
         <circle cx={s.hN[0]} cy={s.hN[1]} r="5.2" class="plate" />
       {:else if p.t === 'barbell'}
@@ -170,7 +181,7 @@
     {@const right = anchor === 'start' ? w : anchor === 'middle' ? w / 2 : 0}
     {@const lx = Math.min(Math.max(mark.p[0] + mark.dx, vb[0] + 2 + left), vb[0] + vb[2] - 2 - right)}
     {@const ly = Math.min(Math.max(mark.p[1] + mark.dy, vb[1] + 7), vb[1] + vb[3] - 2)}
-    <circle cx={mark.p[0]} cy={mark.p[1]} r="4.6" class="mark" />
+    <circle cx={mark.p[0]} cy={mark.p[1]} r="3.8" class="mark" />
     <line x1={mark.p[0]} y1={mark.p[1]} x2={lx} y2={ly} class="leader" />
     <text x={lx} y={ly - 1.5} class="label" text-anchor={anchor}>{mark.label}</text>
   {/if}
@@ -183,73 +194,44 @@
     height: 100%;
     overflow: visible;
     --near: var(--text);
-    --far: #79808a;
+    --core: color-mix(in srgb, var(--text) 80%, var(--bg));
+    --far: color-mix(in srgb, var(--text) 46%, var(--bg));
   }
-  polyline,
   line {
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
   .ol {
+    fill: var(--bg);
     stroke: var(--bg);
-    stroke-width: 7.8;
+    stroke-width: 2.6;
+    stroke-linejoin: round;
   }
-  .fill {
-    stroke-width: 5;
+  .fl {
+    stroke-width: 0.5;
+    stroke-linejoin: round;
   }
-  .ol.torso {
-    stroke-width: 10.4;
-  }
-  .fill.torso {
-    stroke-width: 7.4;
-  }
-  .ol.foot {
-    stroke-width: 7;
-  }
-  .fill.foot {
-    stroke-width: 4.2;
-  }
-  .near .fill,
-  .near .nose {
+  .near .fl {
+    fill: var(--near);
     stroke: var(--near);
   }
-  .far .fill {
+  .core .fl {
+    fill: var(--core);
+    stroke: var(--core);
+  }
+  .far .fl {
+    fill: var(--far);
     stroke: var(--far);
   }
-  .nose {
-    stroke-width: 3.4;
-  }
-  .head {
-    fill: var(--near);
-    stroke: var(--bg);
-    stroke-width: 1.6;
-  }
-  .hand {
-    stroke: var(--bg);
-    stroke-width: 1.4;
-  }
-  .near .hand {
-    fill: var(--near);
-  }
-  .far .hand {
-    fill: var(--far);
+  .eye {
+    fill: var(--bg);
   }
   .ghost {
-    opacity: 0.16;
+    opacity: 0.13;
   }
-  .ghost polyline,
-  .ghost circle {
-    stroke: var(--text);
-    stroke-width: 5;
-    fill: none;
-  }
-  .ghost .t {
-    stroke-width: 7;
-  }
-  .ghost circle {
+  .ghost path {
     fill: var(--text);
-    stroke: none;
   }
   .prop {
     stroke: var(--muted);
@@ -261,11 +243,38 @@
   }
   .wall {
     stroke-width: 2;
+    opacity: 0.75;
+  }
+  .wallfill {
+    fill: var(--surface-2);
+    stroke: none;
     opacity: 0.7;
   }
-  .box {
+  .box,
+  .deck {
     fill: var(--surface-2);
     stroke-width: 1.2;
+  }
+  .trim {
+    stroke-width: 0.7;
+    opacity: 0.6;
+  }
+  .leg {
+    stroke-width: 1.8;
+  }
+  .rail {
+    stroke-width: 3;
+    stroke: var(--accent);
+  }
+  .post {
+    stroke-width: 2.2;
+    opacity: 0.45;
+  }
+  .plabel {
+    fill: var(--muted);
+    stroke: none;
+    font-size: 4.6px;
+    font-weight: 700;
   }
   .mat {
     fill: var(--surface-2);
@@ -280,6 +289,11 @@
     fill: var(--accent);
     stroke: var(--bg);
     stroke-width: 1.2;
+  }
+  .vest {
+    fill: color-mix(in srgb, var(--accent) 80%, var(--bg));
+    stroke: var(--bg);
+    stroke-width: 1;
   }
   .plate {
     fill: none;
@@ -304,7 +318,7 @@
   .mark {
     fill: none;
     stroke: var(--accent);
-    stroke-width: 1.6;
+    stroke-width: 1.5;
   }
   .leader {
     stroke: var(--accent);

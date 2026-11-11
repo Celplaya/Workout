@@ -2,7 +2,8 @@ import * as idb from './idb';
 import { newId, stableId } from './id';
 import { groupBy } from './stats';
 import { userId } from './pb';
-import { DAYS, EXERCISES, PROGRAM_ID, SKILLS } from './program';
+import { DAYS, EXERCISES, PATCHES, PROGRAM_ID, PROGRAM_REV, SKILLS } from './program';
+import { gearAdvice, haveKey, skipKey, type GearAdvice } from './gear';
 import { carryOver, proposals, type Proposal } from './progress';
 import {
   COLLECTIONS,
@@ -57,6 +58,16 @@ class Store {
       planItems: this.plan_items,
       exercises: this.exerciseById,
       skills: this.skills,
+      setsByExercise: this.setsByExercise,
+      sessionsById: this.sessionById,
+      dismissed: this.dismissed,
+    }),
+  );
+
+  /** Equipment advice (parallettes, weight vest, box height). */
+  gear = $derived<GearAdvice[]>(
+    gearAdvice({
+      exercises: this.exercises,
       setsByExercise: this.setsByExercise,
       sessionsById: this.sessionById,
       dismissed: this.dismissed,
@@ -221,38 +232,59 @@ export function restFor(item: PlanItem | undefined): number {
 
 const slug = (name: string) => name.trim().toLowerCase();
 
+/** Revision of the loaded program stored in settings ("id" = 1, "id#3" = 3, another id = 0). */
+export function programRev(stored: string | undefined): number {
+  if (!stored) return 0;
+  const [id, rev] = stored.split('#');
+  if (id !== PROGRAM_ID) return 0;
+  return rev ? Number(rev) || 1 : 1;
+}
+
 /**
  * Load the calisthenics program once (per PROGRAM_ID): exercises with their
  * progression ladders, Monday–Sunday plan and the skills list. Existing
  * exercises are reused by name, so history stays attached. Ids are derived
  * from the content, so a second device doing the same just upserts.
+ *
+ * A higher PROGRAM_REV of the same program only refreshes the ladders, adds
+ * new exercises and applies the PATCHES; the week plan (and anything changed
+ * in the app) stays as it is.
  */
 export async function applyProgram(): Promise<void> {
   const settings = store.settings[0];
   const user = userId();
-  if (!settings || !user || settings.program === PROGRAM_ID) return;
+  if (!settings || !user) return;
+  const have = programRev(settings.program);
+  if (have >= PROGRAM_REV) return;
+  const fresh = have === 0;
+  const patches = PATCHES.filter((p) => p.rev > have);
+  const recue = new Set(patches.flatMap((p) => p.cues ?? []).map(slug));
 
   // 1. Exercises (first pass: create/update; second pass: link ladders).
   const byName = new Map(store.exercises.map((e) => [slug(e.name), e]));
   const resolved = new Map<string, Exercise>();
   for (const def of EXERCISES) {
     const cur = byName.get(slug(def.name));
-    const rec: Exercise = {
-      ...(cur ?? {
+    const base: Exercise =
+      cur ??
+      ({
         id: stableId(user, 'ex', slug(def.name)),
         user,
         name: def.name,
         increment: 0,
         archived: false,
         next: '',
-      }),
-      archived: false,
-      measure: def.measure,
+      } as Exercise);
+    const full = fresh || !cur;
+    const rec: Exercise = {
+      ...base,
+      archived: full ? false : base.archived,
+      measure: full ? def.measure : base.measure,
       progress: !!def.progress,
       default_sets: def.sets ?? 0,
       default_target: def.target ?? 0,
-      cue: def.cue ?? '',
-    } as Exercise;
+      cue: full || recue.has(slug(def.name)) ? (def.cue ?? '') : base.cue,
+    };
     resolved.set(slug(def.name), rec);
   }
   // Save every ladder's next step before the exercise pointing at it: the server
@@ -272,36 +304,44 @@ export async function applyProgram(): Promise<void> {
   const exId = (name: string) => resolved.get(slug(name))!.id;
 
   // 2. Week schedule and plan. Progress from the old plan is carried over.
-  const oldItems = [...store.plan_items];
-  const exMap = new Map(store.exercises.map((e) => [e.id, e]));
-  for (const e of resolved.values()) exMap.set(e.id, e);
-  for (const [i, def] of DAYS.entries()) {
-    const weekday = i + 1;
-    const cur = store.dayByWeekday.get(weekday);
-    const day: Day = cur
-      ? { ...cur, name: def.name, kind: def.kind }
-      : { id: stableId(user, 'day', weekday), user, weekday, name: def.name, kind: def.kind };
-    await save('days', day);
+  if (fresh) {
+    const oldItems = [...store.plan_items];
+    const exMap = new Map(store.exercises.map((e) => [e.id, e]));
+    for (const e of resolved.values()) exMap.set(e.id, e);
+    for (const [i, def] of DAYS.entries()) {
+      const weekday = i + 1;
+      const cur = store.dayByWeekday.get(weekday);
+      const day: Day = cur
+        ? { ...cur, name: def.name, kind: def.kind }
+        : { id: stableId(user, 'day', weekday), user, weekday, name: def.name, kind: def.kind };
+      await save('days', day);
 
-    const items: PlanItem[] = def.items.map(([name, sets, target, note, rest], position) => {
-      const c = carryOver(exId(name), sets, target, oldItems, exMap);
-      return {
-        id: stableId(user, PROGRAM_ID, weekday, position),
-        user,
-        day: day.id,
-        exercise: c.exercise,
-        position,
-        target_sets: c.sets,
-        target_reps: c.target,
-        note: c.exercise === exId(name) ? (note ?? '') : '',
-        rest_seconds: rest ?? 0,
-      };
-    });
-    const keep = new Set(items.map((p) => p.id));
-    for (const old of store.plan_items.filter((p) => p.day === day.id && !keep.has(p.id))) {
-      await remove('plan_items', old.id);
+      const items: PlanItem[] = def.items.map(([name, sets, target, note, rest], position) => {
+        const c = carryOver(exId(name), sets, target, oldItems, exMap);
+        return {
+          id: stableId(user, PROGRAM_ID, weekday, position),
+          user,
+          day: day.id,
+          exercise: c.exercise,
+          position,
+          target_sets: c.sets,
+          target_reps: c.target,
+          note: c.exercise === exId(name) ? (note ?? '') : '',
+          rest_seconds: rest ?? 0,
+        };
+      });
+      const keep = new Set(items.map((p) => p.id));
+      for (const old of store.plan_items.filter((p) => p.day === day.id && !keep.has(p.id))) {
+        await remove('plan_items', old.id);
+      }
+      for (const it of items) await save('plan_items', it);
     }
-    for (const it of items) await save('plan_items', it);
+  } else {
+    for (const [from, to] of patches.flatMap((p) => p.swap ?? [])) {
+      for (const item of store.plan_items.filter((p) => p.exercise === exId(from))) {
+        await patch('plan_items', item.id, { exercise: exId(to), note: '' });
+      }
+    }
   }
 
   // 3. Skills checklist.
@@ -322,7 +362,7 @@ export async function applyProgram(): Promise<void> {
     });
   }
 
-  await patch('settings', settings.id, { program: PROGRAM_ID });
+  await patch('settings', settings.id, { program: PROGRAM_REV > 1 ? `${PROGRAM_ID}#${PROGRAM_REV}` : PROGRAM_ID });
 }
 
 // ---------- proposals ----------
@@ -351,6 +391,19 @@ export async function acceptProposal(p: Proposal): Promise<void> {
     await patch('plan_items', p.item.id, { target_reps: p.to });
   }
   await dismissKey(p.key);
+}
+
+/** "Heb ik" on an equipment advice (toggle). */
+export async function setGearOwned(id: string, owned: boolean): Promise<void> {
+  const user = userId();
+  const rec = stableId(user, 'dismiss', haveKey(id));
+  if (owned) await save('dismissals', { id: rec, user, key: haveKey(id) });
+  else if (store.dismissals.some((d) => d.id === rec)) await remove('dismissals', rec);
+}
+
+/** "Niet nu" on an equipment card on Vandaag (it stays visible under Skills). */
+export async function skipGear(id: string): Promise<void> {
+  await dismissKey(skipKey(id));
 }
 
 export async function setSkillAchieved(skill: Skill, achieved: boolean): Promise<void> {

@@ -2,8 +2,10 @@
   import Figure from './Figure.svelte';
   import { guideFor, VIEW_LABEL } from '../lib/guides';
   import { closeInfo, info } from '../lib/info.svelte';
+  import { defFor } from '../lib/program';
 
   const guide = $derived(guideFor(info.name));
+  const harder = $derived(defFor(info.name)?.harder);
 
   function key(e: KeyboardEvent) {
     if (e.key === 'Escape') closeInfo();
@@ -28,6 +30,7 @@
       {#each guide.cues as c, i (i)}<li>{c}</li>{/each}
     </ol>
     {#if guide.tip}<p class="tip"><b>Let op:</b> {guide.tip}</p>{/if}
+    {#if harder}<p class="tip plain"><b>Zwaarder maken:</b> {harder}</p>{/if}
     <button class="btn" onclick={closeInfo}>Sluiten</button>
   </div>
 {/if}
@@ -102,6 +105,9 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     font-size: 15px;
     line-height: 1.4;
+  }
+  .tip.plain {
+    background: var(--surface-2);
   }
   .tip b {
     color: var(--accent);

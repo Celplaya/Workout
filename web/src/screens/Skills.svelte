@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Gear from '../components/Gear.svelte';
   import Proposals from '../components/Proposals.svelte';
   import { patch, remove, save, setSkillAchieved, store } from '../lib/data.svelte';
   import { shortDate } from '../lib/dates';
@@ -109,6 +110,12 @@
       </div>
     {/if}
   {/each}
+
+  <div class="tier">
+    <span class="eyebrow">Materiaal</span>
+    <span class="small muted">wat je wel en niet nodig hebt</span>
+  </div>
+  <Gear />
 
   <form class="add" onsubmit={add}>
     <input class="field" placeholder="Skill toevoegen, bijv. Crow pose (20 s)" bind:value={newName} />
