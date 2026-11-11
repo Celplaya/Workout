@@ -1,8 +1,8 @@
 import { ClientResponseError } from 'pocketbase';
 import * as idb from './idb';
 import { pb } from './pb';
-import { applyProgram, loadLocal, seedDefaults, setChangeListener, setCollection, store, touchedSince } from './data.svelte';
-import { COLLECTIONS, type CollectionName, type OutboxOp } from './types';
+import { applyActivities, applyProgram, loadLocal, seedDefaults, setChangeListener, setCollection, store, touchedSince } from './data.svelte';
+import { COLLECTIONS, OPTIONAL, type CollectionName, type OutboxOp } from './types';
 
 // Local-first sync: push the outbox (in order), then pull everything and overlay
 // records that still have local changes. Network failures just leave the outbox
@@ -144,17 +144,28 @@ const META_FIELDS = ['collectionId', 'collectionName', 'created', 'updated', 'ex
 async function pull(): Promise<void> {
   const started = Date.now();
   const remote = await Promise.all(
-    COLLECTIONS.map((c) => pb.collection(c).getFullList({ batch: 1000 })),
+    COLLECTIONS.map((c) =>
+      pb
+        .collection(c)
+        .getFullList({ batch: 1000 })
+        .catch((e) => {
+          // Not on the server yet (PocketBase not restarted after a new migration): skip it.
+          if (OPTIONAL.includes(c) && e instanceof ClientResponseError && e.status === 404) return null;
+          throw e;
+        }),
+    ),
   );
   const pending = await idb.outbox();
   const keepLocal = touchedSince(started - 60_000);
   for (const op of pending) keepLocal.add(op.id);
 
   COLLECTIONS.forEach((c, i) => {
+    const rows = remote[i];
+    if (!rows) return;
     const local = (store as unknown as Record<CollectionName, { id: string }[]>)[c];
     const localById = new Map(local.map((r) => [r.id, r]));
     const merged = new Map<string, object>();
-    for (const r of remote[i]) {
+    for (const r of rows) {
       serverIds.add(r.id);
       for (const f of META_FIELDS) delete (r as Record<string, unknown>)[f];
       if (!keepLocal.has(r.id)) merged.set(r.id, r);
@@ -171,6 +182,7 @@ async function pull(): Promise<void> {
   if (!store.days.length || !store.settings.length) await seedDefaults();
   // Only after a successful pull, so the program is merged with what the server has.
   await applyProgram();
+  await applyActivities();
 }
 
 export async function initSync(): Promise<void> {

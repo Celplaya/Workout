@@ -94,6 +94,24 @@ export interface Dismissal extends Base {
   key: string;
 }
 
+/** A workout recorded by a watch, imported by the sync script on the NAS. */
+export interface Activity extends Base {
+  source: string;
+  /** Garmin type key, e.g. walking, hiking, cycling, strength_training. */
+  type: string;
+  name: string;
+  /** Local date YYYY-MM-DD */
+  date: string;
+  /** epoch ms */
+  start: number;
+  minutes: number;
+  avg_hr: number;
+  max_hr: number;
+  /** metres */
+  distance: number;
+  calories: number;
+}
+
 export interface Collections {
   exercises: Exercise;
   days: Day;
@@ -103,6 +121,7 @@ export interface Collections {
   settings: Settings;
   skills: Skill;
   dismissals: Dismissal;
+  activities: Activity;
 }
 
 export type CollectionName = keyof Collections;
@@ -116,7 +135,11 @@ export const COLLECTIONS: CollectionName[] = [
   'settings',
   'skills',
   'dismissals',
+  'activities',
 ];
+
+/** Collections the server may not have yet (migration pending): pulling them may 404. */
+export const OPTIONAL: CollectionName[] = ['activities'];
 
 export interface OutboxOp {
   seq?: number;

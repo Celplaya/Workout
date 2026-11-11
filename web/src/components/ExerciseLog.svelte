@@ -1,7 +1,7 @@
 <script lang="ts">
   import InfoButton from './InfoButton.svelte';
   import Stepper from './Stepper.svelte';
-  import { exerciseIncrement, logSet, remove, store } from '../lib/data.svelte';
+  import { activitiesOn, exerciseIncrement, logSet, remove, store } from '../lib/data.svelte';
   import { amount, kg, stepperUnit, target as fmtTarget } from '../lib/format';
   import { byIdx, describeSets, lastPerformance, overloadSuggestion, prKind, prefill } from '../lib/stats';
   import { showToast } from '../lib/toast.svelte';
@@ -37,6 +37,8 @@
   const isHold = $derived(measure === 'seconds');
   const timed = $derived(measure !== 'reps');
   const hint = $derived([note, ex?.cue].filter(Boolean).join(' · '));
+  // Watch activities of this day (Zone 2 is filled in from these after a sync).
+  const watch = $derived(measure === 'minutes' ? activitiesOn(session.date) : []);
   const done = $derived(
     (store.setsBySession.get(session.id) ?? []).filter((s) => s.exercise === exercise).sort(byIdx),
   );
@@ -149,6 +151,11 @@
   {#if open}
     <div class="body">
       {#if hint}<p class="small muted hint-text">{hint}</p>{/if}
+      {#each watch as a (a.id)}
+        <p class="small hint-text watch">
+          ⌚ {[a.name || a.type, `${a.minutes} min`, a.avg_hr ? `gem. ${a.avg_hr} bpm` : '', a.distance ? `${(a.distance / 1000).toFixed(1)} km` : ''].filter(Boolean).join(' · ')}
+        </p>
+      {/each}
       {#if !targetReps && targetSets}
         <p class="small muted hint-text">Doel: {fmtTarget(targetSets, 0, measure)}{#if best} · beste vandaag {amount(best, measure)}{/if}</p>
       {/if}

@@ -7,6 +7,7 @@ import { gearAdvice, haveKey, skipKey, type GearAdvice } from './gear';
 import { carryOver, proposals, type Proposal } from './progress';
 import {
   COLLECTIONS,
+  type Activity,
   type CollectionName,
   type Collections,
   type Day,
@@ -32,6 +33,7 @@ class Store {
   settings = $state.raw<Settings[]>([]);
   skills = $state.raw<Skill[]>([]);
   dismissals = $state.raw<Dismissal[]>([]);
+  activities = $state.raw<Activity[]>([]);
   loaded = $state(false);
 
   exerciseById = $derived(new Map(this.exercises.map((e) => [e.id, e])));
@@ -397,6 +399,52 @@ export async function acceptProposal(p: Proposal): Promise<void> {
     await patch('plan_items', p.item.id, { target_reps: p.to });
   }
   await dismissKey(p.key);
+}
+
+// ---------- watch activities ----------
+
+/** Activity types that count as Zone 2 (steady cardio), by Garmin type key. */
+export function isCardioActivity(a: Activity): boolean {
+  return a.minutes >= 10 && /walk|hik|cycl|bik|run|treadmill|elliptical|stair|row|swim|cardio/.test(a.type) && !/strength/.test(a.type);
+}
+
+const actKey = (id: string) => `act:${id}`;
+
+/**
+ * Fill in Zone 2 from imported activities: a cardio activity on the date of a
+ * session whose plan has a minutes exercise becomes one set (minutes). Each
+ * activity is used once (remembered as a dismissal key), so deleting the set
+ * in the app does not bring it back.
+ */
+export async function applyActivities(): Promise<void> {
+  const user = userId();
+  if (!user || !store.activities.length) return;
+  const since = Date.now() - 21 * 86_400_000;
+  for (const a of store.activities) {
+    if (!isCardioActivity(a) || a.start < since || store.dismissed.has(actKey(a.id))) continue;
+    for (const session of store.sessions.filter((s) => s.date === a.date && s.kind !== 'cardio')) {
+      const item = planFor(session.day).find((p) => store.exerciseById.get(p.exercise)?.measure === 'minutes');
+      if (!item) continue;
+      const existing = (store.setsBySession.get(session.id) ?? []).filter((s) => s.exercise === item.exercise);
+      await save('sets', {
+        id: stableId(user, 'act', a.id),
+        user,
+        session: session.id,
+        exercise: item.exercise,
+        idx: existing.length ? Math.max(...existing.map((s) => s.idx)) + 1 : 0,
+        weight: 0,
+        reps: a.minutes,
+        at: a.start || Date.now(),
+      });
+      await dismissKey(actKey(a.id));
+      break;
+    }
+  }
+}
+
+/** Imported activities on a date that count for a minutes exercise (shown while logging). */
+export function activitiesOn(date: string): Activity[] {
+  return store.activities.filter((a) => a.date === date && isCardioActivity(a)).sort((x, y) => x.start - y.start);
 }
 
 /** "Heb ik" on an equipment advice (toggle). */

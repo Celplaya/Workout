@@ -146,3 +146,20 @@ Wil je een kopie buiten de NAS? Gebruik dan *Replication Tasks* naar een tweede 
   3. Start de app weer.
 
 > De app op de iPhone heeft altijd ook een lokale kopie. Na een restore haalt hij de serverdata opnieuw op. Lokale wijzigingen die nog niet gesynchroniseerd waren, worden daarna alsnog verstuurd.
+
+## Garmin koppelen (Zone 2 automatisch)
+
+Een klein script op de NAS haalt je Garmin-activiteiten op en zet ze in de collectie `activities`. De app maakt van een wandel-, hike-, fiets- of loopactiviteit (≥ 10 min) op de dag van een sessie met Zone 2 automatisch een set met de duur, en toont de gemiddelde hartslag erbij. Elke activiteit wordt één keer gebruikt; verwijder je de set, dan komt hij niet terug.
+
+Het script (`web/public/garmin-sync.py`) wordt met de app mee gedeployed naar de dataset `workout-public`. Het gebruikt de onofficiële bibliotheek `garminconnect`: als Garmin de inlog verandert, werkt het een tijd niet (app herstarten haalt de nieuwste versie op).
+
+1. Herstart na de deploy eenmalig de app `workout-pb` (nieuwe migratie `activities`).
+2. TrueNAS → Apps → Discover → Custom App:
+   - Naam `workout-garmin`, image `python`, tag `3.12-slim`
+   - Command: `sh` · Arguments: `-c` en `pip install -q --upgrade garminconnect && python /app/garmin-sync.py`
+   - Environment: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `PB_URL` (bijv. `http://<ip-van-de-nas>:8092`), `PB_EMAIL`, `PB_PASSWORD` (je login van de Workout-app), `TZ=Europe/Amsterdam`
+   - Storage: host path `workout-public` → `/app` (read-only) en een nieuwe dataset `workout-garmin` → `/data` (bewaart de Garmin-sessie)
+   - Restart policy: Unless stopped
+3. Kijk in de logs van de app: elke ronde (standaard elk uur, `INTERVAL_MIN`) staat er `N activiteiten van Garmin`.
+
+Werkt alleen zonder tweestapsverificatie op je Garmin-account.
