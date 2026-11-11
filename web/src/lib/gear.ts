@@ -50,7 +50,9 @@ export function gearAdvice(input: GearInput): GearAdvice[] {
   const pulls = latest('Pull-ups');
   const rowsDone = hitTarget(rows, 3, 12);
   const pullsDone = bestValue(pulls) >= 10;
-  const vestNow = rowsDone || pullsDone;
+  const dips = latest('Dips');
+  const dipsDone = hitTarget(dips, 4, 10);
+  const vestNow = rowsDone || pullsDone || dipsDone;
 
   const out: GearAdvice[] = [
     {
@@ -79,19 +81,20 @@ export function gearAdvice(input: GearInput): GearAdvice[] {
         ? [
             'Neem een verstelbaar vest (tot ± 10–20 kg) dat strak zit, zodat het niet schuift bij rows en pull-ups.',
             'Begin met 2,5–5 kg en log het gewicht bij de set: de app stelt dan vanzelf de volgende stap voor.',
-            'Dips blijf je doen met riem of dumbbell; dat laadt makkelijker zwaar.',
+            'Voor dips werkt een riem met schijf of een dumbbell tussen je voeten ook; dat laadt later makkelijker zwaar.',
           ]
         : [
             'Rows: eerst de stang lager, dan 3 sec zakken en 2 sec vasthouden, dan archer rows.',
             'Pull-ups: eerst naar 10 nette reps. Tot die tijd levert meer reps meer op dan meer gewicht.',
-            'Dips doe je al met gewicht aan een riem of dumbbell: daar voegt een vest niets toe.',
+            'Dips: eerst naar 4×10 met eigen gewicht (3 sec zakken maakt het zwaarder). Daarna kan gewicht erbij.',
             'Wil je toch eerder laden? Een rugzak met een schijf erin, of een schijf op je heupen bij rows, doet hetzelfde.',
           ],
       checks: [
         { label: 'Rows voeten verhoogd 3×12', done: rowsDone, detail: reps(rows) },
         { label: 'Pull-ups: 10 reps in één set', done: pullsDone, detail: reps(pulls) },
+        { label: 'Dips 4×10', done: dipsDone, detail: reps(dips) },
       ],
-      buy: vestNow ? undefined : 'Verschijnt als voorstel op Vandaag zodra één van de twee punten hierboven gehaald is.',
+      buy: vestNow ? undefined : 'Verschijnt als voorstel op Vandaag zodra één van de punten hierboven gehaald is.',
     },
     {
       id: 'box',

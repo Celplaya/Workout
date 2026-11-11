@@ -302,10 +302,10 @@ export const GUIDES: Guide[] = [
 
   // ----- push -----
   {
-    name: 'Weighted dips',
+    name: 'Dips',
     mark: { joint: 'eN', label: 'ellebogen naar achteren', dx: -12, dy: -22 },
     arrow: { joint: 'sh', from: 0, to: 1, bend: -8 },
-    props: [{ t: 'pbar', x: 40, y: 56, w: 44 }, { t: 'weight' }],
+    props: [{ t: 'pbar', x: 40, y: 56, w: 44 }],
     frames: [
       f({ spine: [-84, -84], ln: [100, 165, 150], lf: [103, 168, 153], at: ['sh', 60.5, 29.2], ik: hands(60, 56) }, 400, 1000),
       f({ spine: [-68, -68], ln: [108, 172, 157], lf: [111, 175, 160], at: ['sh', 69.9, 45.5], ik: hands(60, 56) }, 300, 1400),
@@ -316,7 +316,7 @@ export const GUIDES: Guide[] = [
       'Leun iets voorover, ellebogen naar achteren.',
       'Druk jezelf terug omhoog tot gestrekte armen.',
     ],
-    tip: 'Pijn voor in je schouder? Minder diep zakken en het gewicht omlaag.',
+    tip: 'Pijn voor in je schouder? Minder diep zakken en langzamer opbouwen.',
   },
   {
     name: 'Archer push-ups',

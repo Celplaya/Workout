@@ -260,6 +260,12 @@ export async function applyProgram(): Promise<void> {
   const patches = PATCHES.filter((p) => p.rev > have);
   const recue = new Set(patches.flatMap((p) => p.cues ?? []).map(slug));
 
+  // 0. Renames: keep the record (and its history) under the new name.
+  for (const [from, to] of PATCHES.filter((p) => fresh || p.rev > have).flatMap((p) => p.rename ?? [])) {
+    const old = store.exercises.find((e) => slug(e.name) === slug(from));
+    if (old && !store.exercises.some((e) => slug(e.name) === slug(to))) await patch('exercises', old.id, { name: to });
+  }
+
   // 1. Exercises (first pass: create/update; second pass: link ladders).
   const byName = new Map(store.exercises.map((e) => [slug(e.name), e]));
   const resolved = new Map<string, Exercise>();

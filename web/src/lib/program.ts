@@ -13,7 +13,7 @@ import type { DayKind, Measure } from './types';
 // they name. A new PROGRAM_ID replaces the whole week.
 
 export const PROGRAM_ID = 'calisthenics-2026-10-ul';
-export const PROGRAM_REV = 2;
+export const PROGRAM_REV = 3;
 
 export interface Patch {
   rev: number;
@@ -21,6 +21,8 @@ export interface Patch {
   swap?: [from: string, to: string][];
   /** Exercises whose cue is reset to the program's text. */
   cues?: string[];
+  /** Exercises that get a new name (history stays attached). */
+  rename?: [from: string, to: string][];
 }
 
 export const PATCHES: Patch[] = [
@@ -29,6 +31,12 @@ export const PATCHES: Patch[] = [
     rev: 2,
     swap: [['Bodyweight rows', 'Bodyweight rows voeten verhoogd']],
     cues: ['Bodyweight rows voeten verhoogd', 'Pike push-ups voeten verhoogd', 'Single leg calf raises', 'Pistol links negatives', 'Step-ups'],
+  },
+  {
+    // 11 nov 2026: dips zijn (nog) met eigen gewicht.
+    rev: 3,
+    rename: [['Weighted dips', 'Dips']],
+    cues: ['Dips'],
   },
 ];
 
@@ -64,7 +72,7 @@ export const EXERCISES: ExerciseDef[] = [
   s('Planche lean', { progress: true, cue: 'Dieper leunen dan je gewend bent', harder: 'Verder leunen telt zwaarder dan langer vasthouden. Op parallettes blijven je polsen recht.' }),
   s('Tuck planche', { next: 'Advanced tuck planche', sets: 6, target: 5, cue: 'Op parallettes' }),
   s('Advanced tuck planche', { progress: true, cue: 'Op parallettes' }),
-  r('Weighted dips', { cue: 'Eerst 4×7, dan gewicht omhoog', harder: 'Riem met schijf of een dumbbell tussen je voeten; een gewichtvest is hier niet nodig.' }),
+  r('Dips', { progress: true, cue: 'Eigen gewicht · eerst naar 4×10', harder: 'Bij 4×10: gewicht erbij (riem met schijf, dumbbell tussen je voeten of een vest) en terug naar 4×6. Tot die tijd: 3 sec zakken.' }),
   r('Archer push-ups', { next: 'Pseudo planche push-ups', sets: 3, target: 8, cue: 'Reps per kant', harder: 'Gestrekte hand op je stepper maakt hem lichter, voeten op de stepper zwaarder.' }),
   r('Pseudo planche push-ups', { progress: true, harder: 'Verder naar voren leunen, of je voeten op je stepper.' }),
   r('Pike push-ups voeten verhoogd', {
@@ -169,7 +177,7 @@ export const DAYS: DayDef[] = [
       ['Tuck planche', 4, 5],
       ['Pull-ups', 5, 6, '3 min rust · stop 1 rep voor failure', 180],
       ['Pull-up negatives', 3, 1],
-      ['Weighted dips', 4, 7],
+      ['Dips', 4, 7],
       ['Advanced tuck front lever', 5, 8],
       ['Archer push-ups', 3, 6],
       ['Bodyweight rows voeten verhoogd', 3, 10],
