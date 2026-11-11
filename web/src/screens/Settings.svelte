@@ -50,6 +50,10 @@
     <Stepper bind:value={increment} step={0.25} min={0.25} unit="kg" />
   </div>
 
+  <a class="card row-link" href="#/plan">
+    <span>Trainingsplan</span><span class="muted">›</span>
+  </a>
+
   <a class="card row-link" href="#/guides">
     <span>Uitleg per oefening</span><span class="muted">›</span>
   </a>

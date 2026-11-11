@@ -345,6 +345,34 @@ export async function applyProgram(): Promise<void> {
       for (const it of items) await save('plan_items', it);
     }
   } else {
+    for (const p of patches) {
+      for (const [weekday, name] of p.days ?? []) {
+        const day = store.dayByWeekday.get(weekday);
+        if (day) await patch('days', day.id, { name });
+      }
+      for (const [weekday, name] of p.drop ?? []) {
+        const day = store.dayByWeekday.get(weekday);
+        for (const item of store.plan_items.filter((x) => x.day === day?.id && x.exercise === exId(name))) {
+          await remove('plan_items', item.id);
+        }
+      }
+      for (const [weekday, [name, sets, target, note, rest]] of p.add ?? []) {
+        const day = store.dayByWeekday.get(weekday);
+        if (!day || store.plan_items.some((x) => x.day === day.id && x.exercise === exId(name))) continue;
+        const position = Math.max(-1, ...planFor(day.id).map((x) => x.position)) + 1;
+        await save('plan_items', {
+          id: stableId(user, PROGRAM_ID, 'rev', p.rev, weekday, slug(name)),
+          user,
+          day: day.id,
+          exercise: exId(name),
+          position,
+          target_sets: sets,
+          target_reps: target,
+          note: note ?? '',
+          rest_seconds: rest ?? 0,
+        });
+      }
+    }
     for (const [from, to] of patches.flatMap((p) => p.swap ?? [])) {
       for (const item of store.plan_items.filter((p) => p.exercise === exId(from))) {
         await patch('plan_items', item.id, { exercise: exId(to), note: '' });

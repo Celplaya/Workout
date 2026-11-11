@@ -1282,7 +1282,7 @@ export const GUIDES: Guide[] = [
   },
   {
     name: 'Zone 2',
-    mark: { joint: 'head', label: 'praattempo', dx: 14, dy: -4 },
+    mark: { joint: 'head', label: 'hartslag in zone 2', dx: 14, dy: -4 },
     props: [{ t: 'line', x1: 8, y1: 100, x2: 112, y2: 91.7, w: 2.5 }],
     frames: [
       f({ spine: [-84, -84], an: [108, 96], af: [68, 44], ln: [0, 0, -5], lf: [0, 0, 20], at: ['hip', 58, 59.6], ik: { ln: [70, 92.4, -1], lf: [45, 94.4, -1] } }, 0, 380),
@@ -1291,11 +1291,12 @@ export const GUIDES: Guide[] = [
       f({ spine: [-84, -84], an: [88, 74], af: [90, 78], ln: [0, 0, 30], lf: [0, 0, -5], at: ['hip', 58, 58.2], ik: { ln: [59, 86, -1], lf: [57, 93.5, -1] } }, 0, 380),
     ],
     cues: [
-      'Wandelen op een helling (± 10%) of rustig fietsen/hiken.',
-      'Tempo waarbij je nog volzinnen kunt praten.',
-      'Niet aan de leuning hangen.',
-      '25–40 minuten aaneengesloten.',
+      'Begin met 5 minuten rustig wandelen, daarna de helling omhoog (start 3–5%).',
+      'Snelheid ± 4–5 km/u; pas snelheid of helling aan tot je hartslag in je Garmin zone 2 zit.',
+      'Niet aan de leuning hangen: armen zwaaien mee.',
+      'Sluit af met 3–5 minuten rustig wandelen.',
     ],
+    tip: 'Je hartslag is leidend, niet de tabel. Stel op je Forerunner een hartslagalert in op de onder- en bovengrens van zone 2.',
   },
 ];
 

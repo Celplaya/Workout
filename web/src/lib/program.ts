@@ -7,13 +7,17 @@ import type { DayKind, Measure } from './types';
 //
 // v2 (25 okt 2026): upper/lower — ma Upper A · di Lower A · wo Mobility ·
 // do Upper B · vr Lower B · za/zo rust. Sessies ± 60–75 min.
+// rev 4: Zone 2 op maandag, woensdag rust (mobility optioneel).
 //
 // Small changes that should not reset the plan go in PATCHES with a new
 // PROGRAM_REV: they update the exercise ladders and touch only the plan items
 // they name. A new PROGRAM_ID replaces the whole week.
 
 export const PROGRAM_ID = 'calisthenics-2026-10-ul';
-export const PROGRAM_REV = 3;
+export const PROGRAM_REV = 4;
+
+/** [exercise name, sets, target, note?, rest seconds?] — target 0 = no target (attempts). */
+export type Item = [string, number, number, string?, number?];
 
 export interface Patch {
   rev: number;
@@ -23,6 +27,11 @@ export interface Patch {
   cues?: string[];
   /** Exercises that get a new name (history stays attached). */
   rename?: [from: string, to: string][];
+  /** New day names, by weekday (1 = Monday). */
+  days?: [weekday: number, name: string][];
+  /** Plan items to remove from / append to a weekday. */
+  drop?: [weekday: number, exercise: string][];
+  add?: [weekday: number, item: Item][];
 }
 
 export const PATCHES: Patch[] = [
@@ -37,6 +46,15 @@ export const PATCHES: Patch[] = [
     rev: 3,
     rename: [['Weighted dips', 'Dips']],
     cues: ['Dips'],
+  },
+  {
+    // 11 nov 2026: trainingsplan calisthenics + cardio — Zone 2 op maandag na
+    // Upper A (start 20 min), woensdag rust met mobility als optie.
+    rev: 4,
+    days: [[3, 'Rust · mobility optioneel']],
+    drop: [[3, 'Zone 2']],
+    add: [[1, ['Zone 2', 1, 20, 'Na je training · loopband, helling 3–5% (week 1–2)']]],
+    cues: ['Zone 2'],
   },
 ];
 
@@ -148,11 +166,13 @@ export const EXERCISES: ExerciseDef[] = [
   s('Pike stretch'),
   s('Pancake stretch'),
   s('Pols- en onderarmstretch'),
-  { name: 'Zone 2', measure: 'minutes', cue: 'Of hiking op de loopband · praattempo' },
+  {
+    name: 'Zone 2', measure: 'minutes', progress: true, cap: 40,
+    cue: 'Loopband met helling · hartslag in Garmin zone 2 · leuning los',
+    harder: 'Opbouw: week 1–2 20 min op 3–5% · week 3–4 20–25 min op 5–7% en een tweede sessie op donderdag (15–20 min) · week 5–6 25–30 min op 6–8% · week 7–8 30–40 min op 8–10%. Je hartslag is leidend; verhoog nooit snelheid, helling en duur tegelijk.',
+  },
 ];
 
-/** [exercise name, sets, target, note?, rest seconds?] — target 0 = no target (attempts). */
-type Item = [string, number, number, string?, number?];
 
 export interface DayDef {
   name: string;
@@ -182,6 +202,7 @@ export const DAYS: DayDef[] = [
       ['Archer push-ups', 3, 6],
       ['Bodyweight rows voeten verhoogd', 3, 10],
       ['Muscle-up step 1 (false grip)', 3, 3],
+      ['Zone 2', 1, 20, 'Na je training · loopband, helling 3–5% (week 1–2)'],
     ],
   },
   {
@@ -200,7 +221,7 @@ export const DAYS: DayDef[] = [
     ],
   },
   {
-    name: 'Mobility + zone 2',
+    name: 'Rust · mobility optioneel',
     kind: 'strength',
     items: [
       ['German hang', 3, 30],
@@ -217,7 +238,6 @@ export const DAYS: DayDef[] = [
       ['Pike stretch', 2, 45],
       ['Pancake stretch', 2, 45],
       ['Pols- en onderarmstretch', 2, 30],
-      ['Zone 2', 1, 30, 'Of hiking · niet allebei zwaar'],
     ],
   },
   {

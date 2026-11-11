@@ -14,6 +14,7 @@
   import Settings from './screens/Settings.svelte';
   import Skills from './screens/Skills.svelte';
   import Guides from './screens/Guides.svelte';
+  import Plan from './screens/Plan.svelte';
   import InfoSheet from './components/InfoSheet.svelte';
   import Summary from './screens/Summary.svelte';
   import Today from './screens/Today.svelte';
@@ -71,6 +72,8 @@
     <History />
   {:else if route.name === 'skills'}
     <Skills />
+  {:else if route.name === 'plan'}
+    <Plan />
   {:else if route.name === 'guides'}
     <Guides mode={param} />
   {:else if route.name === 'exercise'}

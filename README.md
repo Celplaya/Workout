@@ -147,6 +147,8 @@ Wil je een kopie buiten de NAS? Gebruik dan *Replication Tasks* naar een tweede 
 
 > De app op de iPhone heeft altijd ook een lokale kopie. Na een restore haalt hij de serverdata opnieuw op. Lokale wijzigingen die nog niet gesynchroniseerd waren, worden daarna alsnog verstuurd.
 
+- **Trainingsplan:** Instellingen → Trainingsplan toont het plan (doelen, weekplanning, Zone 2-opbouw, 4×4, herstel/HRV); de tekst staat in `web/src/lib/plan.ts`.
+
 ## Garmin koppelen (Zone 2 automatisch)
 
 Een klein script op de NAS haalt je Garmin-activiteiten op en zet ze in de collectie `activities`. De app maakt van een wandel-, hike-, fiets- of loopactiviteit (≥ 10 min) op de dag van een sessie met Zone 2 automatisch een set met de duur, en toont de gemiddelde hartslag erbij. Elke activiteit wordt één keer gebruikt; verwijder je de set, dan komt hij niet terug.

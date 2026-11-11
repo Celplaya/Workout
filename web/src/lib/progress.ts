@@ -109,6 +109,7 @@ export function proposals(input: ProgressInput): Proposal[] {
     }
 
     // Weighted work already gets the "+2,5 kg" hint while logging.
+    if (def?.cap && !growing) continue; // capped and no next step: done growing
     if (!(ex.progress || growing) || recent.some((p) => p.sets.some((s) => s.weight > 0))) continue;
     const key = `raise:${item.id}:${latest}`;
     if (input.dismissed.has(key)) continue;
