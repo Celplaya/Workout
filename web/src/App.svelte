@@ -14,6 +14,7 @@
   import Settings from './screens/Settings.svelte';
   import Skills from './screens/Skills.svelte';
   import Guides from './screens/Guides.svelte';
+  import Body from './screens/Body.svelte';
   import Plan from './screens/Plan.svelte';
   import InfoSheet from './components/InfoSheet.svelte';
   import Summary from './screens/Summary.svelte';
@@ -72,6 +73,8 @@
     <History />
   {:else if route.name === 'skills'}
     <Skills />
+  {:else if route.name === 'body'}
+    <Body />
   {:else if route.name === 'plan'}
     <Plan />
   {:else if route.name === 'guides'}

@@ -56,6 +56,10 @@
 
 <div class="page">
   <div class="header"><h1>Voortgang</h1></div>
+  <div class="tabs2">
+    <a class="on" href="#/history">Kracht</a>
+    <a href="#/body">Conditie</a>
+  </div>
 
   <div class="card stack">
     <div class="spread">
@@ -121,6 +125,23 @@
 </div>
 
 <style>
+  .tabs2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .tabs2 a {
+    text-align: center;
+    text-decoration: none;
+    padding: 9px 0;
+    border-radius: 10px;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .tabs2 a.on {
+    background: var(--surface-2);
+    color: var(--text);
+  }
   .row {
     text-decoration: none;
   }

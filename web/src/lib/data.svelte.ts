@@ -8,6 +8,7 @@ import { carryOver, proposals, type Proposal } from './progress';
 import {
   COLLECTIONS,
   type Activity,
+  type Daily,
   type CollectionName,
   type Collections,
   type Day,
@@ -34,6 +35,7 @@ class Store {
   skills = $state.raw<Skill[]>([]);
   dismissals = $state.raw<Dismissal[]>([]);
   activities = $state.raw<Activity[]>([]);
+  daily = $state.raw<Daily[]>([]);
   loaded = $state(false);
 
   exerciseById = $derived(new Map(this.exercises.map((e) => [e.id, e])));

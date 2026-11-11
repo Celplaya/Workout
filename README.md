@@ -164,4 +164,6 @@ Het script (`web/public/garmin-sync.py`) wordt met de app mee gedeployed naar de
    - Restart policy: Unless stopped
 3. Kijk in de logs van de app: elke ronde (standaard elk uur, `INTERVAL_MIN`) staat er `N activiteiten van Garmin`.
 
+Het script haalt ook hersteldata per dag op (HRV, rusthartslag, slaap, Body Battery, stappen; de eerste keer 28 dagen terug) naar de collectie `daily`, en de tijd per hartslagzone bij activiteiten. Voortgang → Conditie toont daarmee een hersteladvies volgens het trainingsplan (`web/src/lib/recovery.ts`), de week, de Zone 2-opbouw en trends. Na een update van het script: eerst `workout-pb` herstarten (als er een migratie bij zit), dan `workout-garmin`. Zet `DEBUG=1` om de ruwe Garmin-velden in de log te zien.
+
 Werkt alleen zonder tweestapsverificatie op je Garmin-account.

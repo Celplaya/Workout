@@ -110,6 +110,36 @@ export interface Activity extends Base {
   /** metres */
   distance: number;
   calories: number;
+  /** Minutes per heart-rate zone (0 when the watch gave none). */
+  z1?: number;
+  z2?: number;
+  z3?: number;
+  z4?: number;
+  z5?: number;
+}
+
+/** One day of recovery numbers from the watch. 0 / '' = not measured. */
+export interface Daily extends Base {
+  /** Local date YYYY-MM-DD (sleep and HRV are from the night before). */
+  date: string;
+  resting_hr: number;
+  /** Overnight HRV in ms, with the 7-day average and the personal "balanced" range. */
+  hrv: number;
+  hrv_weekly: number;
+  hrv_low: number;
+  hrv_high: number;
+  /** Garmin status: BALANCED, UNBALANCED, LOW, POOR or ''. */
+  hrv_status: string;
+  sleep_minutes: number;
+  sleep_score: number;
+  battery_high: number;
+  battery_low: number;
+  stress: number;
+  steps: number;
+  vo2max: number;
+  readiness: number;
+  /** epoch ms of the last import */
+  synced: number;
 }
 
 export interface Collections {
@@ -122,6 +152,7 @@ export interface Collections {
   skills: Skill;
   dismissals: Dismissal;
   activities: Activity;
+  daily: Daily;
 }
 
 export type CollectionName = keyof Collections;
@@ -136,10 +167,11 @@ export const COLLECTIONS: CollectionName[] = [
   'skills',
   'dismissals',
   'activities',
+  'daily',
 ];
 
 /** Collections the server may not have yet (migration pending): pulling them may 404. */
-export const OPTIONAL: CollectionName[] = ['activities'];
+export const OPTIONAL: CollectionName[] = ['activities', 'daily'];
 
 export interface OutboxOp {
   seq?: number;
