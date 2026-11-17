@@ -110,3 +110,29 @@ describe('aggregates', () => {
     ]);
   });
 });
+
+import { bestSet } from './stats';
+
+describe('bestSet', () => {
+  const sess = (id: string, started: number, date: string) =>
+    ({ id, user: 'u', day: 'd', date, day_name: '', kind: 'strength', started, finished: started + 1, note: '', cardio_done: false, avg_hr: 0 }) as const;
+  const sessions = new Map([sess('a', 1, '2026-11-02'), sess('b', 2, '2026-11-09'), sess('c', 3, '2026-11-16')].map((s) => [s.id, { ...s }]));
+  let n = 0;
+  const w = (session: string, reps: number, weight = 0) => ({ id: `x${++n}`, user: 'u', session, exercise: 'e', idx: n, weight, reps, at: n });
+
+  it('takes the most reps, first time it was reached, before the current session', () => {
+    const sets = [w('a', 8), w('a', 10), w('b', 10), w('b', 9), w('c', 12)];
+    const r = bestSet(sets, sessions, sessions.get('c'));
+    expect(r?.set.reps).toBe(10);
+    expect(r?.session.id).toBe('a');
+  });
+
+  it('prefers weight over reps for weighted work', () => {
+    const sets = [w('a', 10, 5), w('b', 6, 10), w('b', 4, 10)];
+    expect(bestSet(sets, sessions)?.set).toMatchObject({ weight: 10, reps: 6 });
+  });
+
+  it('is empty without earlier sessions', () => {
+    expect(bestSet([w('c', 5)], sessions, sessions.get('c'))).toBeNull();
+  });
+});

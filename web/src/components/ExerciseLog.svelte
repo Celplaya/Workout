@@ -3,7 +3,8 @@
   import Stepper from './Stepper.svelte';
   import { activitiesOn, exerciseIncrement, logSet, remove, store } from '../lib/data.svelte';
   import { amount, kg, stepperUnit, target as fmtTarget } from '../lib/format';
-  import { byIdx, describeSets, lastPerformance, overloadSuggestion, prKind, prefill } from '../lib/stats';
+  import { parseDate, shortDate } from '../lib/dates';
+  import { bestSet, byIdx, describeSets, lastPerformance, overloadSuggestion, prKind, prefill } from '../lib/stats';
   import { showToast } from '../lib/toast.svelte';
   import { clock, startRest, stopRest } from '../lib/timers.svelte';
   import { beep, primeSpeech, say, tick, unlockAudio } from '../lib/sound';
@@ -43,6 +44,26 @@
     (store.setsBySession.get(session.id) ?? []).filter((s) => s.exercise === exercise).sort(byIdx),
   );
   const prev = $derived(lastPerformance(store.setsByExercise.get(exercise) ?? [], store.sessionById, session));
+  const record = $derived(bestSet(store.setsByExercise.get(exercise) ?? [], store.sessionById, session));
+  const recordText = $derived(
+    record
+      ? (record.set.weight > 0
+        ? `${kg(record.set.weight)} kg × ${record.set.reps}`
+        : measure === 'reps' || !measure
+          ? `${record.set.reps} reps`
+          : amount(record.set.reps, measure)) +
+          ` (${shortDate(parseDate(record.session.date))})`
+      : '',
+  );
+  // Today beat the record (same rule as the record itself).
+  const beaten = $derived(
+    !!record &&
+      done.some((s) =>
+        record.set.weight > 0
+          ? s.weight > record.set.weight || (s.weight === record.set.weight && s.reps > record.set.reps)
+          : s.reps > record.set.reps,
+      ),
+  );
   const step = $derived(exerciseIncrement(exercise));
   const suggestion = $derived(overloadSuggestion(prev?.sets ?? [], targetSets, targetReps, step));
   const complete = $derived(targetSets > 0 && done.length >= targetSets);
@@ -139,6 +160,11 @@
     <div class="title">
       <h3>{name}</h3>
       {#if prev}<div class="small muted">vorige: {describeSets(prev.sets, measure)}</div>{/if}
+      {#if record}
+        <div class="small muted record" class:beaten>
+          {beaten ? '★ nieuw record · was' : 'beste:'} {recordText}
+        </div>
+      {/if}
     </div>
     <div class="progress num" class:up={complete}>
       {done.length}<span class="muted">/{targetSets || '–'}</span>
@@ -206,6 +232,10 @@
 </section>
 
 <style>
+  .record.beaten {
+    color: var(--accent);
+    font-weight: 600;
+  }
   .ex {
     background: var(--surface);
     border-radius: var(--radius);

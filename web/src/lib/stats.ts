@@ -63,6 +63,38 @@ export function lastPerformance(
 }
 
 /**
+ * Best single set before the current session: heaviest weight (most reps at
+ * that weight) when the exercise was ever done with weight, otherwise the most
+ * reps / longest hold. Ties go to the earliest set, so the date is when the
+ * record was first set.
+ */
+export function bestSet(
+  exerciseSets: WorkSet[],
+  sessionsById: Map<string, Session>,
+  current?: Session,
+): { set: WorkSet; session: Session } | null {
+  let best: { set: WorkSet; session: Session } | null = null;
+  const weighted = exerciseSets.some((s) => s.weight > 0);
+  for (const s of exerciseSets) {
+    if (current && s.session === current.id) continue;
+    const sess = sessionsById.get(s.session);
+    if (!sess) continue;
+    if (current && sess.started >= current.started) continue;
+    if (!best) {
+      best = { set: s, session: sess };
+      continue;
+    }
+    const b = best.set;
+    const better = weighted
+      ? s.weight > b.weight || (s.weight === b.weight && s.reps > b.reps)
+      : s.reps > b.reps;
+    const same = weighted ? s.weight === b.weight && s.reps === b.reps : s.reps === b.reps;
+    if (better || (same && sess.started < best.session.started)) best = { set: s, session: sess };
+  }
+  return best && best.set.reps > 0 ? best : null;
+}
+
+/**
  * "3×8 @ 60 kg", "8/8/6 @ 60 kg", "60×8, 62,5×6", "3×12" (bodyweight),
  * "3×20 s" or "20/15/12 s" (holds).
  */
