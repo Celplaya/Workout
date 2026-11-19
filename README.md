@@ -159,7 +159,8 @@ Het script (`web/public/garmin-sync.py`) wordt met de app mee gedeployed naar de
 2. TrueNAS → Apps → Discover → Custom App:
    - Naam `workout-garmin`, image `python`, tag `3.12-slim`
    - Command: `sh` · Arguments: `-c` en `pip install -q --upgrade garminconnect && python /app/garmin-sync.py`
-   - Environment: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `PB_URL` (bijv. `http://<ip-van-de-nas>:8092`), `PB_EMAIL`, `PB_PASSWORD` (je login van de Workout-app), `TZ=Europe/Amsterdam`
+   - Environment: `GARMIN_API_KEY` (officiële Personal API-key, aanrader), `GARMIN_EMAIL`, `GARMIN_PASSWORD` (alleen nog voor hersteldata), `PB_URL` (bijv. `http://<ip-van-de-nas>:8092`), `PB_EMAIL`, `PB_PASSWORD` (je login van de Workout-app), `TZ=Europe/Amsterdam`
+   - Optioneel, meditatie → journey: `JOURNEY_PB_URL` (bijv. `http://<ip-van-de-nas>:8091`), `JOURNEY_PB_EMAIL`, `JOURNEY_PB_PASSWORD` (je login van journey), `JOURNEY_MEDITATION_ITEM` (standaard `10 min mediteren`), `MEDITATION_MIN` (standaard `10`)
    - Storage: host path `workout-public` → `/app` (read-only) en een nieuwe dataset `workout-garmin` → `/data` (bewaart de Garmin-sessie)
    - Restart policy: Unless stopped
 3. Kijk in de logs van de app: elke ronde (standaard elk uur, `INTERVAL_MIN`) staat er `N activiteiten van Garmin`.

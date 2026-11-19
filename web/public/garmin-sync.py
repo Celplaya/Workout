@@ -6,7 +6,11 @@ Haalt je recente Garmin-activiteiten op en zet ze in de collectie
 op de NAS (zie README, "Garmin koppelen").
 
 Omgevingsvariabelen:
-  GARMIN_EMAIL, GARMIN_PASSWORD   je Garmin Connect-login
+  GARMIN_API_KEY                  officiële Garmin Personal API-key (aanrader).
+                                  Activiteiten komen dan via de officiële API.
+  GARMIN_EMAIL, GARMIN_PASSWORD   je Garmin Connect-login (onofficieel). Alleen
+                                  nog nodig voor de hersteldata; zonder deze
+                                  twee wordt de hersteldata overgeslagen.
   PB_URL                          bijv. http://192.168.1.10:8092
   PB_EMAIL, PB_PASSWORD           je login van de Workout-app
   INTERVAL_MIN                    minuten tussen twee rondes (standaard 60)
@@ -17,9 +21,18 @@ Omgevingsvariabelen:
   FAKE_FILE                       test: lees activiteiten uit dit JSON-bestand
   ONCE                            test: één ronde en dan stoppen
 
-Dit gebruikt de onofficiële bibliotheek `garminconnect`. Als Garmin de inlog
-verandert, werkt het een tijd niet tot die bibliotheek is bijgewerkt
-(container herstarten haalt de nieuwste versie op).
+Meditatie -> journey (optioneel, alleen als JOURNEY_PB_URL gezet is):
+  JOURNEY_PB_URL                  bijv. http://192.168.1.3:8091
+  JOURNEY_PB_EMAIL, JOURNEY_PB_PASSWORD   je login van journey
+  JOURNEY_MEDITATION_ITEM         naam van het doel (standaard "10 min mediteren")
+  MEDITATION_MIN                  minimale duur in minuten (standaard 10)
+  Een Garmin-meditatie van vandaag die lang genoeg is, vinkt dat dagelijkse
+  doel af. Journey rekent XP en streak zelf uit (pb_hooks/xp.pb.js).
+
+De hersteldata gebruikt nog de onofficiële bibliotheek `garminconnect`. Als
+Garmin de inlog verandert, werkt dat deel een tijd niet tot die bibliotheek is
+bijgewerkt (container herstarten haalt de nieuwste versie op). Activiteiten en
+meditatie lopen dan gewoon door als GARMIN_API_KEY gezet is.
 """
 import datetime as dt
 import json
@@ -27,6 +40,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -72,7 +86,68 @@ class PB:
         return "bijgewerkt"
 
 
-# ---------- Garmin ----------
+# ---------- Garmin: officiële Personal API ----------
+
+class GarminPersonal:
+    """Officiële Garmin Connect Personal API.
+
+    De key wordt ingewisseld voor een access token (platte tekst, 24 uur
+    geldig, geen refresh token). We halen ruim op tijd een nieuwe op.
+    """
+
+    BASE = os.environ.get("GARMIN_API_BASE", "https://personal.connectapi.garmin.com")
+    TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
+
+    def __init__(self, key):
+        self.key = key
+        self.token = None
+        self.expires = 0
+
+    def _token(self):
+        if self.token and time.time() < self.expires:
+            return self.token
+        req = urllib.request.Request(self.BASE + self.TOKEN_PATH, method="POST", headers={"Authorization": "ApiKey " + self.key})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = r.read().decode().strip()
+        try:  # mocht Garmin het ooit als JSON sturen
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                parsed = next((v for k, v in parsed.items() if "token" in k.lower() and isinstance(v, str)), None)
+            body = parsed if isinstance(parsed, str) else body
+        except ValueError:
+            pass
+        if not body or " " in body:
+            raise RuntimeError("Garmin gaf geen bruikbaar token terug (key verlopen of ongeldig?)")
+        self.token = body
+        self.expires = time.time() + 20 * 3600
+        return self.token
+
+    def get(self, path, params=None):
+        url = self.BASE + path + ("?" + urllib.parse.urlencode(params) if params else "")
+        for attempt in (1, 2):
+            req = urllib.request.Request(url, headers={"Authorization": "Bearer " + self._token(), "Accept": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return json.load(r)
+            except urllib.error.HTTPError as e:
+                if e.code == 401 and attempt == 1:
+                    self.token = None  # token vervallen: één keer opnieuw
+                    continue
+                raise
+
+    def activities(self, days_back):
+        end = dt.date.today()
+        start = end - dt.timedelta(days=days_back)
+        data = self.get(
+            "/activitylist-service/activities/search/activities",
+            {"startDate": start.isoformat(), "endDate": end.isoformat(), "limit": 100},
+        )
+        if isinstance(data, dict):  # voor het geval de lijst ingepakt is
+            data = next((v for v in data.values() if isinstance(v, list)), [])
+        return data or []
+
+
+# ---------- Garmin: onofficiële bibliotheek (alleen nog hersteldata) ----------
 
 TOKEN_DIR = os.environ.get("TOKEN_DIR", "/data")
 
@@ -204,11 +279,57 @@ def to_record(a, user):
     }
 
 
+# ---------- Meditatie -> journey ----------
+
+def sync_meditation(acts):
+    """Vink het dagelijkse meditatiedoel in journey af als Garmin vandaag een
+    meditatie van minstens MEDITATION_MIN minuten heeft. Journey's eigen hook
+    rekent XP en streak uit; wij zetten alleen `completed` op true."""
+    url = os.environ.get("JOURNEY_PB_URL")
+    if not url:
+        return
+    min_minutes = int(os.environ.get("MEDITATION_MIN", "10"))
+    name = os.environ.get("JOURNEY_MEDITATION_ITEM", "10 min mediteren")
+    today = dt.date.today().isoformat()
+    minutes = sum(
+        float(a.get("duration") or 0) / 60
+        for a in acts
+        if (a.get("activityType") or {}).get("typeKey") == "meditation"
+        and str(a.get("startTimeLocal") or "")[:10] == today
+    )
+    if minutes < min_minutes:
+        if minutes:
+            log(f"meditatie vandaag {minutes:.0f} min (< {min_minutes}): journey niet afgevinkt")
+        return
+
+    jpb = PB(url, env("JOURNEY_PB_EMAIL"), env("JOURNEY_PB_PASSWORD"))
+    flt = urllib.parse.quote(f'text = "{name}" && type = "dagelijks" && owner = "{jpb.user}"')
+    items = jpb.call("GET", f"/api/collections/items/records?perPage=2&filter={flt}").get("items") or []
+    if not items:
+        log(f'journey: doel "{name}" niet gevonden')
+        return
+    item = items[0]
+    # journey's hook gebruikt de UTC-datum als "vandaag"; beide tellen als al gedaan.
+    utc_today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    if item.get("last_completed_date") in (today, utc_today):
+        return
+    jpb.call("PATCH", f"/api/collections/items/records/{item['id']}", {"completed": True})
+    log(f'meditatie vandaag {minutes:.0f} min: "{name}" afgevinkt in journey')
+
+
 def run_once():
     data = fake()
-    g = None if data else garmin_login()
     days_back = int(os.environ.get("DAYS_BACK", "10"))
-    acts = data["activities"] if data else garmin_activities(g, days_back)
+    api_key = os.environ.get("GARMIN_API_KEY")
+    has_login = bool(os.environ.get("GARMIN_EMAIL") and os.environ.get("GARMIN_PASSWORD"))
+    g = None
+    if data:
+        acts = data["activities"]
+    elif api_key:
+        acts = GarminPersonal(api_key).activities(days_back)
+    else:
+        g = garmin_login()
+        acts = garmin_activities(g, days_back)
     pb = PB(env("PB_URL"), env("PB_EMAIL"), env("PB_PASSWORD"))
     counts = {}
     for a in acts:
@@ -217,7 +338,19 @@ def run_once():
             continue
         what = pb.upsert(rec)
         counts[what] = counts.get(what, 0) + 1
-    log(f"{len(acts)} activiteiten van Garmin:", counts or "niets te doen")
+    log(f"{len(acts)} activiteiten van Garmin{' (officiële API)' if api_key and not data else ''}:", counts or "niets te doen")
+
+    try:
+        sync_meditation(acts)
+    except Exception as e:  # journey mag de rest van de ronde niet blokkeren
+        log("journey-meditatie mislukt:", type(e).__name__, e)
+
+    # Hersteldata loopt nog via de onofficiële login.
+    if not data and g is None:
+        if not has_login:
+            log("hersteldata overgeslagen: geen GARMIN_EMAIL/GARMIN_PASSWORD")
+            return
+        g = garmin_login()
 
     # Hersteldata: de eerste keer een maand terug (voor de trend), daarna vandaag en gisteren.
     marker = os.path.join(TOKEN_DIR, "daily-backfilled")
