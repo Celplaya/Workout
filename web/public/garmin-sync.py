@@ -29,6 +29,12 @@ Meditatie -> journey (optioneel, alleen als JOURNEY_PB_URL gezet is):
   Een Garmin-meditatie van vandaag die lang genoeg is, vinkt dat dagelijkse
   doel af. Journey rekent XP en streak zelf uit (pb_hooks/xp.pb.js).
 
+Wortschatz -> journey (optioneel, naast de JOURNEY_*-variabelen):
+  WORTSCHATZ_PB_URL               bijv. http://192.168.1.3:8090
+  WORTSCHATZ_PB_EMAIL, WORTSCHATZ_PB_PASSWORD   je login van Wortschatz
+  WORTSCHATZ_MIN                  minimum Duitse kaarten per dag (standaard 10)
+  JOURNEY_LANGUAGE_ITEM           naam van het doel (standaard "Duits oefenen")
+
 De hersteldata gebruikt nog de onofficiële bibliotheek `garminconnect`. Als
 Garmin de inlog verandert, werkt dat deel een tijd niet tot die bibliotheek is
 bijgewerkt (container herstarten haalt de nieuwste versie op). Activiteiten en
@@ -302,19 +308,41 @@ def sync_meditation(acts):
             log(f"meditatie vandaag {minutes:.0f} min (< {min_minutes}): journey niet afgevinkt")
         return
 
-    jpb = PB(url, env("JOURNEY_PB_EMAIL"), env("JOURNEY_PB_PASSWORD"))
+    tick_journey_item(name, f"meditatie vandaag {minutes:.0f} min")
+
+
+def tick_journey_item(name, why):
+    """Vink een dagelijks journey-doel af (journey's hook doet XP/streak)."""
+    jpb = PB(env("JOURNEY_PB_URL"), env("JOURNEY_PB_EMAIL"), env("JOURNEY_PB_PASSWORD"))
     flt = urllib.parse.quote(f'text = "{name}" && type = "dagelijks" && owner = "{jpb.user}"')
     items = jpb.call("GET", f"/api/collections/items/records?perPage=2&filter={flt}").get("items") or []
     if not items:
         log(f'journey: doel "{name}" niet gevonden')
         return
     item = items[0]
-    # journey's hook gebruikt de UTC-datum als "vandaag"; beide tellen als al gedaan.
+    today = dt.date.today().isoformat()
     utc_today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     if item.get("last_completed_date") in (today, utc_today):
         return
     jpb.call("PATCH", f"/api/collections/items/records/{item['id']}", {"completed": True})
-    log(f'meditatie vandaag {minutes:.0f} min: "{name}" afgevinkt in journey')
+    log(f'{why}: "{name}" afgevinkt in journey')
+
+
+def sync_language():
+    """Vink "Duits oefenen" af als Wortschatz vandaag genoeg Duitse kaarten
+    telt (S.log[vandaag].de, sinds de Herr Brandt-update)."""
+    url = os.environ.get("WORTSCHATZ_PB_URL")
+    if not url or not os.environ.get("JOURNEY_PB_URL"):
+        return
+    minimum = int(os.environ.get("WORTSCHATZ_MIN", "10"))
+    wpb = PB(url, env("WORTSCHATZ_PB_EMAIL"), env("WORTSCHATZ_PB_PASSWORD"))
+    flt = urllib.parse.quote(f'owner = "{wpb.user}"')
+    recs = wpb.call("GET", f"/api/collections/user_state/records?perPage=1&filter={flt}").get("items") or []
+    data = (recs[0].get("data") if recs else None) or {}
+    today = dt.date.today().isoformat()
+    count = int(((data.get("log") or {}).get(today) or {}).get("de") or 0)
+    if count >= minimum:
+        tick_journey_item(os.environ.get("JOURNEY_LANGUAGE_ITEM", "Duits oefenen"), f"Wortschatz vandaag {count} Duitse kaarten")
 
 
 def run_once():
@@ -344,6 +372,10 @@ def run_once():
         sync_meditation(acts)
     except Exception as e:  # journey mag de rest van de ronde niet blokkeren
         log("journey-meditatie mislukt:", type(e).__name__, e)
+    try:
+        sync_language()
+    except Exception as e:
+        log("journey-taal mislukt:", type(e).__name__, e)
 
     # Hersteldata loopt nog via de onofficiële login.
     if not data and g is None:
